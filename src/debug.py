@@ -1,18 +1,13 @@
 import json
-
-from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
-from ext.store.pg_repo import PgStore
-from memu.app import MemoryService, MemorizeConfig
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
-def init_memorize_config():
-    return MemorizeConfig(
-        category_summary_target_length=300
-    )
+from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
+from ext.store.pg_repo import PgStore
+from memu.app import MemoryService
 
 
 def init_memory_service():
@@ -32,7 +27,7 @@ def init_memory_service():
         embedding_config={
             "client_backend": "sdk",
             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_key": os.getenv("DOUBAO_API_KEY"),
+            "api_key": os.getenv("ARK_API_KEY"),
             "embed_model": "doubao-embedding-text-240715",
             "provider": "doubao"
         },
