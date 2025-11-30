@@ -1,34 +1,30 @@
 PROMPT = """
-Your task is to read and analyze existing content and some new memory items, and then selectively update the content to reflect both the existing and new information.
+你是一个用户画像分析专家，你的任务是阅读并分析现有内容和一些新的记忆项，然后选择性地更新内容，使其同时反映现有与新的信息。
 
-## Topic:
+## 主题：
 {category}
 
-## Original content:
+## 原始内容：
 <content>
 {original_content}
 </content>
 
-## New memory items:
+## 新的记忆项：
 {new_memory_items_text}
 
-## Update Instructions:
-- Use the same language as the original content within <content></content> or new memory items (if the original content is empty).
-- Output in markdown format with hierarchical structure.
-- Record date or time information (if mentioned in new memory items) for events and occurrences, and omit them for consistent facts (e.g., permanent attributes, patterns, definitions).
-- Embed the date/time in the text naturally, do not leave them in brackets.
-- Merge the date/time information reasonably and hierarchically if a series of items happened at the same date/time, but ensure that a reader can understand when each item occurred.
-- Don't let a single topic or hierarchy level contain more than ten bullets, you should create new subtopics or levels of hierarchies to cluster information wisely.
-- If there are conflicts between the existing content and new memory items, you can preserve the original content to reflect the variation, but ensure that the new information is recorded, and a reader can understand what changed.
-- Never use subtitles like "new memories" or "updates" (or that in the target language) to distinguish existing and updated content. Always let every subtopic and subtitle be meaningful and informative.
-- Keep the information in each line self-contained, never use expressions like "at the same day" or "as mentioned before" that depend on other lines.
-- **Important** For content about people or entities, carefully identify the subject (who/what) and reflect it correctly in the summary.
+## 更新说明：
+- 只保留持续性的事实（例如永久属性、规律、定义），去掉具体时间相关的事件。
+- 单个主题或层级下不要超过十条要点，需要时创建新的子主题或层级，以更好地聚合信息。
+- 如果现有内容与新的记忆项之间有冲突，你可以保留原始内容以体现差异，但必须记录新的信息，并确保读者能理解发生了哪些变化。
+- 不要使用诸如“新的记忆”“更新内容”等标题（或目标语言中的类似说法）来区分现有和更新后的内容；所有子主题和标题都应具有真实含义。
+- 确保每一行的信息都是自洽的，不要使用诸如“同一天”“如前所述”等依赖其他行的表达。
+- **重要**：涉及人物或实体的内容，须谨慎识别主体（是谁/是什么），并在总结中正确反映。
 
-## Output Requirements:
-- Always keep the output length within {target_length} words/characters.
-- DO NOT include any explanation, only output the content containing the actual information.
-- If the original content and the new memory items to be integrated exceed the target length in total, you should selectively merge or omit less important information or details based on your judgement.
-- **Important** *ALWAYS* use the same language as the original content (or memory items if original content is empty).
-- **Important** *DO NOT* contain duplicate information.
-- **Important** Organize content logically and hierarchically - group related items together under meaningful headings.
+## 输出要求：
+- 以 Markdown 格式输出，并使用层级结构。
+- 输出长度必须始终保持在 {target_length} 字/词以内。
+- 不要包含任何解释，只输出包含实际信息的内容。
+- 如果原始内容与新的记忆项整合后总长度超过目标长度，你应根据判断选择性地合并或省略不太重要的信息或细节。
+- **重要**：不要包含重复信息。
+- **重要**：以逻辑和层级组织内容——将相关项目聚合在有意义的标题之下。
 """
