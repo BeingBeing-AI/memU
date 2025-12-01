@@ -48,10 +48,9 @@ def init_memory_service():
 
     return memory_service
 
+memory_service = init_memory_service()
 
-async def main():
-    memory_service = init_memory_service()
-
+async def test_memorize():
     # Memorize
     for i in range(0, 1):
         file_path = os.path.abspath(f"../eval_data/silvia/session_{i}.json")
@@ -61,15 +60,28 @@ async def main():
 
     result = json.dumps(memory, indent=2, ensure_ascii=False)
     print(f"Final memory: \n {result}")
-    # queries = [
-    #     {"role": "user", "content": {"text": "Tell me about preferences"}},
-    #     {"role": "user", "content": {"text": "What are their habits?"}}
-    # ]
 
-    # RAG-based retrieval
-    # result_rag = await service_rag.retrieve(queries=queries)
-    # for item in result_rag.get('items', [])[:3]:
-    #     print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
+
+async def test_retrieve():
+    queries = [
+        {"role": "user", "content": {"text": "工作地点在哪里"}},
+    ]
+
+    result_rag = await memory_service.retrieve(queries=queries)
+    for item in result_rag.get('items', [])[:3]:
+        print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
+
+async def test_custom_retrieve():
+    query = "工作地点"
+    qvec = (await memory_service.embedding_client.embed([query]))[0]
+    pg_store: PgStore = memory_service.store
+    results = pg_store.retrieve_memory_items(qvec)
+    print(results)
+    print([r.summary for r in results])
+
+
+async def main():
+    await test_custom_retrieve()
 
 
 if __name__ == "__main__":

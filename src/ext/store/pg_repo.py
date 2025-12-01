@@ -250,6 +250,23 @@ class PgStore(BaseMemoryStore):
         """关闭数据库连接"""
         self.engine.dispose()
 
+    def items(self):
+        """返回所有memory_items的迭代器"""
+        session = self.SessionLocal()
+        try:
+            db_items = session.query(MemoryItemModel).all()
+            for db_item in db_items:
+                item = MemoryItem(
+                    id=str(db_item.id),
+                    resource_id=str(db_item.resource_id),
+                    memory_type=str(db_item.memory_type),
+                    summary=str(db_item.summary),
+                    embedding=db_item.embedding.tolist() if db_item.embedding is not None else [],
+                )
+                yield item
+        finally:
+            session.close()
+
     def update_category_summary(self, category_id: str, summary: str) -> bool:
         """更新类别的 summary 字段"""
         session = self.SessionLocal()
@@ -263,6 +280,42 @@ class PgStore(BaseMemoryStore):
         except Exception:
             session.rollback()
             return False
+        finally:
+            session.close()
+
+    def retrieve_memory_items(
+        self, qvec: List[float], top_k: int = 5
+    ) -> List[MemoryItem]:
+        """
+        通过pgvector实现对memoryitem表中embedding的向量检索
+
+        Args:
+            qvec: 查询的embedding向量
+            top_k: 返回最相似的top_k个结果
+
+        Returns:
+            List[MemoryItem]: 最相似的记忆项列表
+        """
+        session = self.SessionLocal()
+        try:
+            # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
+            results = session.query(MemoryItemModel).order_by(
+                MemoryItemModel.embedding.cosine_distance(qvec)
+            ).limit(top_k).all()
+
+            # 将数据库模型转换为MemoryItem对象
+            memory_items = []
+            for db_item in results:
+                memory_item = MemoryItem(
+                    id=db_item.id,
+                    resource_id=db_item.resource_id,
+                    memory_type=db_item.memory_type,
+                    summary=db_item.summary,
+                    embedding=db_item.embedding.tolist() if db_item.embedding is not None else [],
+                )
+                memory_items.append(memory_item)
+
+            return memory_items
         finally:
             session.close()
 
@@ -310,3 +363,23 @@ class CategoriesAccessor:
     def __contains__(self, category_id: str) -> bool:
         """支持 'in' 操作符"""
         return self.get(category_id) is not None
+
+    def items(self):
+        """支持字典的items()方法，返回(category_id, MemoryCategory)元组的迭代器"""
+        session = self.store.SessionLocal()
+        try:
+            db_categories = session.query(MemoryCategoryModel).all()
+            for db_category in db_categories:
+                embedding_data = db_category.embedding.tolist() if db_category.embedding is not None else []
+                category = PgMemoryCategory(
+                    id=str(db_category.id),
+                    name=str(db_category.name),
+                    description=str(db_category.description),
+                    embedding=embedding_data,
+                    summary=str(db_category.summary) if db_category.summary is not None else None,
+                )
+                # 设置 store 实例，以便在修改 summary 时自动更新数据库
+                category._store = self.store
+                yield str(db_category.id), category
+        finally:
+            session.close()
