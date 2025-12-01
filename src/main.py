@@ -2,15 +2,48 @@ import json
 import os
 from pathlib import Path
 import traceback
-from typing import Any, Dict
 import uuid
+from typing import Dict, Any, List, Optional
+from contextvars import ContextVar
 
 from dotenv import load_dotenv
-from fastapi.responses import JSONResponse
-from fastapi import FastAPI, HTTPException
-from memu.app import MemoryService
+
+from ext.store.pg_repo import PgStore
 
 load_dotenv()
+
+from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
+from memu.app import MemoryService
+
+# Create context variable for user_id
+user_id_ctx: ContextVar[Optional[str]] = ContextVar('user_id', default=None)
+
+
+def get_current_user_id() -> Optional[str]:
+    """
+    Get the current user ID from the context variable.
+
+    Returns:
+        Optional[str]: The current user ID, or None if not set
+    """
+    return user_id_ctx.get()
+
+
+# Request models for API endpoints
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
+
+class MemorizeRequest(BaseModel):
+    conversation: List[ConversationMessage]
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+
 
 def init_memory_service():
     memory_service = MemoryService(
@@ -49,15 +82,32 @@ def init_memory_service():
 app = FastAPI()
 service = init_memory_service()
 
+
+@app.middleware("http")
+async def user_context_middleware(request: Request, call_next):
+    """Middleware to handle user context: set user_id from header and clear it after request."""
+    try:
+        # Get user_id from request header
+        user_id = request.headers.get("x-user-id")
+        if user_id:
+            # Set user_id in context variable
+            user_id_ctx.set(user_id)
+
+        response = await call_next(request)
+        return response
+    finally:
+        # Clear the user_id context variable after each request
+        user_id_ctx.set(None)
+
 storage_dir = Path(os.getenv("MEMU_STORAGE_DIR", "./data"))
 storage_dir.mkdir(parents=True, exist_ok=True)
 
 @app.post("/memorize")
-async def memorize(payload: Dict[str, Any]):
+async def memorize(memorize_request: MemorizeRequest):
     try:
         file_path = storage_dir / f"conversation-{uuid.uuid4().hex}.json"
         with file_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
+            json.dump(memorize_request.conversation, f, ensure_ascii=False)
 
         result = await service.memorize(resource_url=str(file_path), modality="conversation")
         return JSONResponse(content={"status": "success", "result": result})
@@ -72,6 +122,25 @@ async def retrieve(payload: Dict[str, Any]):
     try:
         result = await service.retrieve([payload["query"]])
         return JSONResponse(content={"status": "success", "result": result})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.post("/retrieve-item")
+async def retrieve(retrieve_request: RetrieveRequest):
+    try:
+        qvec = (await service.embedding_client.embed([retrieve_request.query]))[0]
+        pg_store: PgStore = service.store
+        results = pg_store.retrieve_memory_items(qvec)
+        resp = [
+            {
+                "id": r.id,
+                "memory_type": r.memory_type,
+                "summary": r.summary,
+            }
+            for r in results
+        ]
+        # print([r.summary for r in results])
+        return JSONResponse(content={"status": "success", "result": resp})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
