@@ -1,14 +1,14 @@
 import json
 import os
-from pathlib import Path
 import traceback
 import uuid
-from typing import Dict, Any, List, Optional
-from contextvars import ContextVar
+from pathlib import Path
+from typing import Dict, Any, List
 
 from dotenv import load_dotenv
 
 from ext.store.pg_repo import PgStore
+from ext.util.request_utils import set_current_user_id
 
 load_dotenv()
 
@@ -17,18 +17,6 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from memu.app import MemoryService
 
-# Create context variable for user_id
-user_id_ctx: ContextVar[Optional[str]] = ContextVar('user_id', default=None)
-
-
-def get_current_user_id() -> Optional[str]:
-    """
-    Get the current user ID from the context variable.
-
-    Returns:
-        Optional[str]: The current user ID, or None if not set
-    """
-    return user_id_ctx.get()
 
 
 # Request models for API endpoints
@@ -90,14 +78,12 @@ async def user_context_middleware(request: Request, call_next):
         # Get user_id from request header
         user_id = request.headers.get("x-user-id")
         if user_id:
-            # Set user_id in context variable
-            user_id_ctx.set(user_id)
+            set_current_user_id(user_id)
 
         response = await call_next(request)
         return response
     finally:
-        # Clear the user_id context variable after each request
-        user_id_ctx.set(None)
+        set_current_user_id(None)
 
 storage_dir = Path(os.getenv("MEMU_STORAGE_DIR", "./data"))
 storage_dir.mkdir(parents=True, exist_ok=True)

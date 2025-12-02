@@ -53,7 +53,8 @@ memory_service = init_memory_service()
 async def test_memorize():
     # Memorize
     for i in range(0, 1):
-        file_path = os.path.abspath(f"../eval_data/silvia/session_{i}.json")
+        file_path = os.path.abspath(f"../data/silvia/session_{i}.json")
+        print(f"Memorizing {file_path}...")
         memory = await memory_service.memorize(resource_url=file_path, modality="conversation")
         for cat in memory.get('categories', []):
             print(f"  - {cat.get('name')}: {(cat.get('summary') or '')}")
@@ -75,13 +76,18 @@ async def test_custom_retrieve():
     query = "工作地点"
     qvec = (await memory_service.embedding_client.embed([query]))[0]
     pg_store: PgStore = memory_service.store
+    # results = pg_store.retrieve_memory_items(qvec)
+    # results = await  memory_service._rank_categories_by_summary(qvec, top_k=5)
     results = pg_store.retrieve_memory_items(qvec)
-    print(results)
-    print([r.summary for r in results])
+    print([f"{r.memory_type}: {r.summary}\n" for r in results if r])
+
+    results = pg_store.retrieve_memory_categories(qvec)
+    print([f"{r.name}: {r.summary}" for r in results if r])
 
 
 async def main():
-    await test_custom_retrieve()
+    await test_memorize()
+    # await test_custom_retrieve()
 
 
 if __name__ == "__main__":

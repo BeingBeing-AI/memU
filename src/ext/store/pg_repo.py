@@ -319,6 +319,42 @@ class PgStore(BaseMemoryStore):
         finally:
             session.close()
 
+    def retrieve_memory_categories(
+        self, qvec: List[float], top_k: int = 5
+    ) -> List[MemoryCategory]:
+        """
+        通过pgvector实现对memorycategory表中embedding的向量检索
+
+        Args:
+            qvec: 查询的embedding向量
+            top_k: 返回最相似的top_k个结果
+
+        Returns:
+            List[MemoryCategory]: 最相似的记忆类别列表
+        """
+        session = self.SessionLocal()
+        try:
+            # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
+            results = session.query(MemoryCategoryModel).order_by(
+                MemoryCategoryModel.embedding.cosine_distance(qvec)
+            ).limit(top_k).all()
+
+            # 将数据库模型转换为MemoryCategory对象
+            memory_categories = []
+            for db_category in results:
+                memory_category = MemoryCategory(
+                    id=str(db_category.id),
+                    name=str(db_category.name),
+                    description=str(db_category.description),
+                    embedding=db_category.embedding.tolist() if db_category.embedding is not None else [],
+                    summary=str(db_category.summary) if db_category.summary is not None else None,
+                )
+                memory_categories.append(memory_category)
+
+            return memory_categories
+        finally:
+            session.close()
+
 
 class CategoriesAccessor:
     """Categories 访问器，提供类似字典的接口来访问数据库中的 MemoryCategory 对象"""

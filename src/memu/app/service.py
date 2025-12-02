@@ -338,6 +338,8 @@ class MemoryService:
         category_memory_updates: dict[str, list[str]] = {}
 
         for (memory_type, summary_text, cat_names), emb in zip(structured_entries, item_embeddings, strict=True):
+            if not cat_names:
+                continue
             item = self.store.create_item(
                 resource_id=resource_id,
                 memory_type=memory_type,
