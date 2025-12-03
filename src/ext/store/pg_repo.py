@@ -34,7 +34,7 @@ class PgMemoryCategory(MemoryCategory):
         if name == "summary" and self._store is not None:
             self._store.update_category_summary(self.id, value)
 
-VECTOR_DIMENSION = 2560
+VECTOR_DIMENSION = 1024
 
 Base = declarative_base()
 
@@ -284,14 +284,15 @@ class PgStore(BaseMemoryStore):
             session.close()
 
     def retrieve_memory_items(
-        self, qvec: List[float], top_k: int = 5
+        self, qvec: List[float], top_k: int = 5, min_similarity: float = 0.3
     ) -> List[MemoryItem]:
         """
-        通过pgvector实现对memoryitem表中embedding的向量检索
+        通过pgvector实现对memory_items表中embedding的向量检索
 
         Args:
             qvec: 查询的embedding向量
             top_k: 返回最相似的top_k个结果
+            min_similarity: 最小相似度阈值，低于此值的结果将被过滤掉
 
         Returns:
             List[MemoryItem]: 最相似的记忆项列表
@@ -299,9 +300,14 @@ class PgStore(BaseMemoryStore):
         session = self.SessionLocal()
         try:
             # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
-            results = session.query(MemoryItemModel).order_by(
+            # 余弦距离转为余弦相似度: similarity = 1 - distance
+            query = session.query(MemoryItemModel).filter(
+                MemoryItemModel.embedding.cosine_distance(qvec) <= (1 - min_similarity)
+            ).order_by(
                 MemoryItemModel.embedding.cosine_distance(qvec)
-            ).limit(top_k).all()
+            )
+
+            results = query.limit(top_k).all()
 
             # 将数据库模型转换为MemoryItem对象
             memory_items = []
@@ -391,10 +397,7 @@ class CategoriesAccessor:
 
     def __getitem__(self, category_id: str) -> MemoryCategory:
         """支持字典式的访问方式"""
-        category = self.get(category_id)
-        if category is None:
-            raise KeyError(f"Category with id '{category_id}' not found")
-        return category
+        return self.get(category_id)
 
     def __contains__(self, category_id: str) -> bool:
         """支持 'in' 操作符"""
