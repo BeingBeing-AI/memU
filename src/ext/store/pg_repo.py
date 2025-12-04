@@ -361,6 +361,34 @@ class PgStore(BaseMemoryStore):
         finally:
             session.close()
 
+    def get_all_categories(self) -> List[MemoryCategory]:
+        """
+        获取所有memory category
+
+        Returns:
+            List[MemoryCategory]: 所有记忆类别列表
+        """
+        session = self.SessionLocal()
+        try:
+            # 查询所有类别
+            results = session.query(MemoryCategoryModel).all()
+
+            # 将数据库模型转换为MemoryCategory对象
+            memory_categories = []
+            for db_category in results:
+                memory_category = MemoryCategory(
+                    id=str(db_category.id),
+                    name=str(db_category.name),
+                    description=str(db_category.description),
+                    embedding=db_category.embedding.tolist() if db_category.embedding is not None else [],
+                    summary=str(db_category.summary) if db_category.summary is not None else None,
+                )
+                memory_categories.append(memory_category)
+
+            return memory_categories
+        finally:
+            session.close()
+
 
 class CategoriesAccessor:
     """Categories 访问器，提供类似字典的接口来访问数据库中的 MemoryCategory 对象"""
