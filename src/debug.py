@@ -4,17 +4,18 @@ import time
 
 from dotenv import load_dotenv
 
+from ext.app.ext_service import ExtUserContext, ExtMemoryService
 from ext.prompts.summary_profile import PROMPT
 
 load_dotenv()
 
 from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
 from ext.store.pg_repo import PgStore
-from memu.app import MemoryService
+from memu.app import DefaultUserModel
 
 
 def init_memory_service():
-    memory_service = MemoryService(
+    memory_service = ExtMemoryService(
         llm_config={
             "client_backend": "sdk",
             "base_url": "",
@@ -47,26 +48,24 @@ def init_memory_service():
         chat_model="gpt-5.1",
     )
 
-    memory_service.store = PgStore(connection_string="postgresql://root:dev123@localhost:5432/starfy")
-
-    memory_service._categories_ready = False
-    memory_service._ensure_categories_ready()
-
     return memory_service
 
 memory_service = init_memory_service()
 
-async def test_memorize():
+async def test_memorize(user_id):
+    user = DefaultUserModel(user_id=user_id)
+    memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id, categories_ready=False)
     # Memorize
-    for i in range(0, 24):
-        file_path = os.path.abspath(f"../data/silvia/session_{i}.json")
+    for i in range(0, 2):
+        file_path = os.path.abspath(f"../data/{user_id}/session_{i}.json")
         print(f"Memorizing {file_path}...")
-        memory = await memory_service.memorize(resource_url=file_path, modality="conversation")
+        memory = await memory_service.memorize(resource_url=file_path, modality="conversation", user=user)
         for cat in memory.get('categories', []):
             print(f"  - {cat.get('name')}: {(cat.get('summary') or '')}")
 
     result = json.dumps(memory, indent=2, ensure_ascii=False)
     print(f"Final memory: \n {result}")
+    # await memory_service.summary_user_profile(user)
 
 
 async def summary_categories():
@@ -111,9 +110,9 @@ async def test_custom_retrieve():
 
 
 async def main():
-    # await test_memorize()
+    await test_memorize("silvia")
     # await test_custom_retrieve()
-    await summary_categories()
+    # await summary_categories()
 
 
 if __name__ == "__main__":

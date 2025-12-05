@@ -1,9 +1,10 @@
 import base64
 import logging
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
-from openai import AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI, Omit, omit
+from openai.types import ReasoningEffort
 from openai.types.chat import (
     ChatCompletionContentPartImageParam,
     ChatCompletionContentPartTextParam,
@@ -43,6 +44,7 @@ class OpenAIAzureSDKClient:
         *,
         max_tokens: int | None = None,
         system_prompt: str | None = None,
+        reasoning_effort:Optional[ReasoningEffort] | Omit = omit,
     ) -> str:
         prompt = system_prompt or "Summarize the text in one short paragraph."
 
@@ -60,6 +62,7 @@ class OpenAIAzureSDKClient:
             model=self.chat_model,
             messages=messages,
             temperature=1,
+            reasoning_effort=reasoning_effort,
             # max_tokens=max_tokens,
         )
         content = response.choices[0].message.content

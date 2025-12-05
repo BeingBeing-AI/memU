@@ -10,9 +10,13 @@ from sqlalchemy import (
     String,
     Text,
     Table,
+    Engine,
+    Index,
+    DateTime,
 )
+from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 from ext.store.base_repo import BaseMemoryStore
 from memu.models import (
@@ -22,17 +26,6 @@ from memu.models import (
     MemoryType,
     Resource,
 )
-
-
-class PgMemoryCategory(MemoryCategory):
-    """PgStore 专用的 MemoryCategory 子类，支持自动更新数据库"""
-    _store: Optional["PgStore"] = None
-
-    def __setattr__(self, name: str, value):
-        super().__setattr__(name, value)
-        # 如果是 summary 属性被修改，且有 store 实例，则自动更新数据库
-        if name == "summary" and self._store is not None:
-            self._store.update_category_summary(self.id, value)
 
 VECTOR_DIMENSION = 1024
 
@@ -50,6 +43,9 @@ class MemoryResourceModel(Base):
     __tablename__ = "memory_resources"
 
     id = Column(String(255), primary_key=True)
+    user_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     url = Column(String(512), nullable=False)
     modality = Column(String(50), nullable=False)
     local_path = Column(Text, nullable=False)
@@ -61,55 +57,106 @@ class MemoryCategoryModel(Base):
     __tablename__ = "memory_categories"
 
     id = Column(String(255), primary_key=True)
-    name = Column(String(255), nullable=False, unique=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    user_id = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=True)
     summary = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index('idx_memory_categories_user_name', 'user_id', 'name'),
+    )
 
 
 class MemoryItemModel(Base):
     __tablename__ = "memory_items"
 
     id = Column(String(255), primary_key=True)
+    user_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     resource_id = Column(String(255), nullable=False)
     memory_type = Column(String(50), nullable=False)
     summary = Column(Text, nullable=False)
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=False)
 
 
-class PgStore(BaseMemoryStore):
-    def __init__(self, connection_string: str) -> None:
+class SharedEngine:
+    """全局共享的 engine 封装类"""
+
+    def __init__(self, connection_string: str):
+        self.engine, self.session = self.init_pg_engine(connection_string, echo=True)
+
+    @staticmethod
+    def init_pg_engine(connection_string: str, echo: bool = False) -> tuple[Engine, sessionmaker[Session]]:
         """
-        初始化PostgreSQL存储（使用pgvector）
+        初始化全局共享的 PostgreSQL engine
 
         Args:
             connection_string: PostgreSQL连接字符串，格式如：
                 "postgresql://user:password@host:port/database"
+            echo: 是否打印SQL语句，默认为False
+
+        Returns:
+            Engine: SQLAlchemy engine 实例
         """
-        self.engine = create_engine(
+
+        engine = create_engine(
             connection_string,
-            echo=False,  # 设置为True可以看到SQL语句
+            echo=echo,
             pool_pre_ping=True,
         )
-        self.SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine
+        session_local = sessionmaker(
+            autocommit=False, autoflush=False, bind=engine
         )
-        self.categories = CategoriesAccessor(self)
-        self._create_tables()
+        # 创建数据库表
+        Base.metadata.create_all(bind=engine)
 
-    def _create_tables(self) -> None:
-        """创建数据库表（需要确保已安装 pgvector 扩展）"""
-        Base.metadata.create_all(bind=self.engine)
+        return engine, session_local
+
+    def dispose(self):
+        """关闭并清理 engine"""
+        self.engine.dispose()
+
+
+# 全局共享的 engine 实例
+_shared_engine: Optional[SharedEngine] = SharedEngine(
+    connection_string="postgresql://root:dev123@localhost:5432/starfy")
+
+
+class PgMemoryCategory(MemoryCategory):
+    """PgStore 专用的 MemoryCategory 子类，支持自动更新数据库"""
+    _store: Optional["PgStore"] = None
+
+    def __setattr__(self, name: str, value):
+        super().__setattr__(name, value)
+        # 如果是 summary 属性被修改，且有 store 实例，则自动更新数据库
+        if name == "summary" and self._store is not None:
+            self._store.update_category_summary(self.id, value)
+
+
+class PgStore(BaseMemoryStore):
+    def __init__(self, user_id: str) -> None:
+        """
+        初始化PostgreSQL存储（使用pgvector）
+        """
+        self.user_id = user_id
+        self.engine = _shared_engine.engine
+        self.session_local = _shared_engine.session
+        self.categories = CategoriesAccessor(self)
 
     def create_resource(
             self, *, url: str, modality: str, local_path: str, caption: str = None
     ) -> Resource:
         """创建资源"""
-        session = self.SessionLocal()
+        session = self.session_local()
         try:
             resource_id = str(uuid.uuid4())
             db_resource = MemoryResourceModel(
                 id=resource_id,
+                user_id=self.user_id,
                 url=url,
                 modality=modality,
                 local_path=local_path,
@@ -133,17 +180,18 @@ class PgStore(BaseMemoryStore):
     def get_or_create_category(
             self, *, name: str, description: str, embedding: List[float]
     ) -> MemoryCategory:
-        """获取或创建记忆类别"""
-        session = self.SessionLocal()
+        """获取或创建记忆类别（仅限当前用户）"""
+        session = self.session_local()
         try:
-            # 首先尝试查找现有类别
+            # 首先尝试查找现有类别（仅限当前用户）
             db_category = session.query(MemoryCategoryModel).filter(
-                MemoryCategoryModel.name == name
+                MemoryCategoryModel.name == name,
+                MemoryCategoryModel.user_id == self.user_id
             ).first()
 
             if db_category:
                 # 如果现有类别没有embedding，更新它
-                if db_category.embedding is None:
+                if db_category.embedding is None and embedding is not None:
                     db_category.embedding = embedding
                     session.commit()
                     session.refresh(db_category)
@@ -167,6 +215,7 @@ class PgStore(BaseMemoryStore):
                 category_id = str(uuid.uuid4())
                 db_category = MemoryCategoryModel(
                     id=category_id,
+                    user_id=self.user_id,
                     name=name,
                     description=description,
                     embedding=embedding,
@@ -197,11 +246,12 @@ class PgStore(BaseMemoryStore):
             embedding: List[float],
     ) -> MemoryItem:
         """创建记忆项"""
-        session = self.SessionLocal()
+        session = self.session_local()
         try:
             item_id = str(uuid.uuid4())
             db_item = MemoryItemModel(
                 id=item_id,
+                user_id=self.user_id,
                 resource_id=resource_id,
                 memory_type=memory_type,
                 summary=summary,
@@ -223,13 +273,30 @@ class PgStore(BaseMemoryStore):
             session.close()
 
     def link_item_category(self, item_id: str, cat_id: str) -> CategoryItem:
-        """链接记忆项和类别"""
-        session = self.SessionLocal()
+        """链接记忆项和类别（验证item属于当前用户）"""
+        session = self.session_local()
         try:
+            # 首先验证item是否属于当前用户
+            item_exists = session.query(MemoryItemModel).filter(
+                MemoryItemModel.id == item_id,
+                MemoryItemModel.user_id == self.user_id
+            ).first()
+
+            if not item_exists:
+                raise ValueError(f"Item {item_id} not found or does not belong to user {self.user_id}")
+
+            # 验证category是否属于当前用户
+            category_exists = session.query(MemoryCategoryModel).filter(
+                MemoryCategoryModel.id == cat_id,
+                MemoryCategoryModel.user_id == self.user_id
+            ).first()
+
+            if not category_exists:
+                raise ValueError(f"Category {cat_id} not found or does not belong to user {self.user_id}")
+
             # 检查关系是否已存在
             existing = session.query(category_items_table).filter(
-                category_items_table.c.item_id == item_id
-            ).filter(
+                category_items_table.c.item_id == item_id,
                 category_items_table.c.category_id == cat_id
             ).first()
 
@@ -251,10 +318,12 @@ class PgStore(BaseMemoryStore):
         self.engine.dispose()
 
     def items(self):
-        """返回所有memory_items的迭代器"""
-        session = self.SessionLocal()
+        """返回当前用户的所有memory_items的迭代器"""
+        session = self.session_local()
         try:
-            db_items = session.query(MemoryItemModel).all()
+            db_items = session.query(MemoryItemModel).filter(
+                MemoryItemModel.user_id == self.user_id
+            ).all()
             for db_item in db_items:
                 item = MemoryItem(
                     id=str(db_item.id),
@@ -268,12 +337,13 @@ class PgStore(BaseMemoryStore):
             session.close()
 
     def update_category_summary(self, category_id: str, summary: str) -> bool:
-        """更新类别的 summary 字段"""
-        session = self.SessionLocal()
+        """更新类别的 summary 字段（仅限当前用户）"""
+        session = self.session_local()
         try:
             # 更新数据库中的 summary
             updated = session.query(MemoryCategoryModel).filter(
-                MemoryCategoryModel.id == category_id
+                MemoryCategoryModel.id == category_id,
+                MemoryCategoryModel.user_id == self.user_id
             ).update({"summary": summary.strip()})
             session.commit()
             return updated > 0
@@ -284,10 +354,10 @@ class PgStore(BaseMemoryStore):
             session.close()
 
     def retrieve_memory_items(
-        self, qvec: List[float], top_k: int = 5, min_similarity: float = 0.3
+            self, qvec: List[float], top_k: int = 5, min_similarity: float = 0.3
     ) -> List[MemoryItem]:
         """
-        通过pgvector实现对memory_items表中embedding的向量检索
+        通过pgvector实现对memory_items表中embedding的向量检索（仅限当前用户）
 
         Args:
             qvec: 查询的embedding向量
@@ -297,11 +367,12 @@ class PgStore(BaseMemoryStore):
         Returns:
             List[MemoryItem]: 最相似的记忆项列表
         """
-        session = self.SessionLocal()
+        session = self.session_local()
         try:
             # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
             # 余弦距离转为余弦相似度: similarity = 1 - distance
             query = session.query(MemoryItemModel).filter(
+                MemoryItemModel.user_id == self.user_id,
                 MemoryItemModel.embedding.cosine_distance(qvec) <= (1 - min_similarity)
             ).order_by(
                 MemoryItemModel.embedding.cosine_distance(qvec)
@@ -326,10 +397,10 @@ class PgStore(BaseMemoryStore):
             session.close()
 
     def retrieve_memory_categories(
-        self, qvec: List[float], top_k: int = 5
+            self, qvec: List[float], top_k: int = 5
     ) -> List[MemoryCategory]:
         """
-        通过pgvector实现对memorycategory表中embedding的向量检索
+        通过pgvector实现对memorycategory表中embedding的向量检索（仅限当前用户）
 
         Args:
             qvec: 查询的embedding向量
@@ -338,10 +409,12 @@ class PgStore(BaseMemoryStore):
         Returns:
             List[MemoryCategory]: 最相似的记忆类别列表
         """
-        session = self.SessionLocal()
+        session = self.session_local()
         try:
             # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
-            results = session.query(MemoryCategoryModel).order_by(
+            results = session.query(MemoryCategoryModel).filter(
+                MemoryCategoryModel.user_id == self.user_id
+            ).order_by(
                 MemoryCategoryModel.embedding.cosine_distance(qvec)
             ).limit(top_k).all()
 
@@ -363,15 +436,17 @@ class PgStore(BaseMemoryStore):
 
     def get_all_categories(self) -> List[MemoryCategory]:
         """
-        获取所有memory category
+        获取当前用户的所有memory category
 
         Returns:
             List[MemoryCategory]: 所有记忆类别列表
         """
-        session = self.SessionLocal()
+        session = self.session_local()
         try:
-            # 查询所有类别
-            results = session.query(MemoryCategoryModel).all()
+            # 查询当前用户的所有类别
+            results = session.query(MemoryCategoryModel).filter(
+                MemoryCategoryModel.user_id == self.user_id
+            ).all()
 
             # 将数据库模型转换为MemoryCategory对象
             memory_categories = []
@@ -398,10 +473,11 @@ class CategoriesAccessor:
 
     def get(self, category_id: str) -> Optional[MemoryCategory]:
         """根据 ID 获取 MemoryCategory 对象，如果不存在则返回 None"""
-        session = self.store.SessionLocal()
+        session = self.store.session_local()
         try:
             db_category = session.query(MemoryCategoryModel).filter(
-                MemoryCategoryModel.id == category_id
+                MemoryCategoryModel.id == category_id,
+                MemoryCategoryModel.user_id == self.store.user_id
             ).first()
 
             if db_category:
@@ -433,9 +509,11 @@ class CategoriesAccessor:
 
     def items(self):
         """支持字典的items()方法，返回(category_id, MemoryCategory)元组的迭代器"""
-        session = self.store.SessionLocal()
+        session = self.store.session_local()
         try:
-            db_categories = session.query(MemoryCategoryModel).all()
+            db_categories = session.query(MemoryCategoryModel).filter(
+                MemoryCategoryModel.user_id == self.store.user_id
+            ).all()
             for db_category in db_categories:
                 embedding_data = db_category.embedding.tolist() if db_category.embedding is not None else []
                 category = PgMemoryCategory(

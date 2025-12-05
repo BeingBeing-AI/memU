@@ -7,16 +7,17 @@ from typing import Dict, Any, List
 
 from dotenv import load_dotenv
 
+from debug import memory_service
+from ext.app.ext_service import ExtMemoryService, ExtUserContext
+from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
 from ext.store.pg_repo import PgStore
-from ext.util.request_utils import set_current_user_id
+from memu.app import DefaultUserModel
 
 load_dotenv()
 
 from fastapi.responses import JSONResponse
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from memu.app import MemoryService
-
 
 
 # Request models for API endpoints
@@ -26,35 +27,42 @@ class ConversationMessage(BaseModel):
 
 
 class MemorizeRequest(BaseModel):
+    user_id: str
     conversation: List[ConversationMessage]
 
 
 class RetrieveRequest(BaseModel):
+    user_id: str
     query: str
 
 
 def init_memory_service():
-    memory_service = MemoryService(
+    memory_service = ExtMemoryService(
         llm_config={
             "client_backend": "sdk",
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_key": os.getenv("ARK_API_KEY"),
-            "chat_model": "ep-20251011204137-4wknv",
+            "base_url": "",
+            "api_key": "",
+            "chat_model": "",
         },
         embedding_config={
             "client_backend": "sdk",
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_key": os.getenv("ARK_API_KEY"),
-            "embed_model": "doubao-embedding-text-240715",
-            "provider": "doubao"
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "api_key": os.getenv("QWEN_API_KEY"),
+            "embed_model": "text-embedding-v4",
         },
+        # embedding_config={
+        #     "client_backend": "sdk",
+        #     "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        #     "api_key": os.getenv("ARK_API_KEY"),
+        #     "embed_model": "doubao-embedding-text-240715",
+        #     "provider": "doubao"
+        # },
         memorize_config={
             "category_summary_target_length": 300
         },
         retrieve_config={"method": "rag"}
     )
 
-    from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
     memory_service.llm_client = OpenAIAzureSDKClient(
         azure_endpoint="https://gpt-5-10.openai.azure.com",
         api_key=os.getenv("GPT_API_KEY"),
@@ -62,60 +70,51 @@ def init_memory_service():
         chat_model="gpt-5.1",
     )
 
-    from ext.store.pg_repo import PgStore
-    memory_service.store = PgStore(connection_string=os.getenv("PG_URL"))
-
     return memory_service
 
+
 app = FastAPI()
-service = init_memory_service()
-
-
-@app.middleware("http")
-async def user_context_middleware(request: Request, call_next):
-    """Middleware to handle user context: set user_id from header and clear it after request."""
-    try:
-        # Get user_id from request header
-        user_id = request.headers.get("x-user-id")
-        if user_id:
-            set_current_user_id(user_id)
-
-        response = await call_next(request)
-        return response
-    finally:
-        set_current_user_id(None)
+memory_service = init_memory_service()
 
 storage_dir = Path(os.getenv("MEMU_STORAGE_DIR", "./data"))
 storage_dir.mkdir(parents=True, exist_ok=True)
 
-@app.post("/memorize")
-async def memorize(memorize_request: MemorizeRequest):
+
+@app.post("/api/v1/memory/memorize")
+async def memorize(request: MemorizeRequest):
     try:
         file_path = storage_dir / f"conversation-{uuid.uuid4().hex}.json"
         with file_path.open("w", encoding="utf-8") as f:
-            json.dump(memorize_request.conversation, f, ensure_ascii=False)
+            json.dump([msg.model_dump() for msg in request.conversation], f, ensure_ascii=False)
 
-        result = await service.memorize(resource_url=str(file_path), modality="conversation")
-        return JSONResponse(content={"status": "success", "result": result})
+        user = DefaultUserModel(user_id=request.user_id)
+        memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id,
+                                                                                      categories_ready=False)
+        result = await memory_service.memorize(resource_url=str(file_path), modality="conversation", user=user)
+        await memory_service.summary_user_profile(user=user)
+        summaries = memory_service.get_all_category_summaries(user=user)
+        return JSONResponse(content={"status": "success", "result": summaries})
     except Exception as exc:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(exc))
+
 
 @app.post("/retrieve")
 async def retrieve(payload: Dict[str, Any]):
     if "query" not in payload:
         raise HTTPException(status_code=400, detail="Missing 'query' in request body")
     try:
-        result = await service.retrieve([payload["query"]])
+        result = await memory_service.retrieve([payload["query"]])
         return JSONResponse(content={"status": "success", "result": result})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+
 @app.post("/retrieve-item")
-async def retrieve(retrieve_request: RetrieveRequest):
+async def retrieve_item(retrieve_request: RetrieveRequest):
     try:
-        qvec = (await service.embedding_client.embed([retrieve_request.query]))[0]
-        pg_store: PgStore = service.store
+        qvec = (await memory_service.embedding_client.embed([retrieve_request.query]))[0]
+        pg_store: PgStore = memory_service.store
         results = pg_store.retrieve_memory_items(qvec)
         resp = [
             {
@@ -125,7 +124,6 @@ async def retrieve(retrieve_request: RetrieveRequest):
             }
             for r in results
         ]
-        # print([r.summary for r in results])
         return JSONResponse(content={"status": "success", "result": resp})
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
