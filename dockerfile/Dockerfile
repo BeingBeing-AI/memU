@@ -1,5 +1,10 @@
 FROM python:3.14-slim
 
+# Install system build dependencies required by Rust-based Python packages
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
@@ -22,10 +27,11 @@ RUN uv sync --frozen --no-dev
 EXPOSE 8000
 
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src:$PYTHONPATH"
 
 CMD [ \
   "python", "-m", "gunicorn", \
   "--bind", "0.0.0.0:8000", \
   "--worker-class", "uvicorn.workers.UvicornWorker", \
-  "app.main:app" \
+  "main:app" \
 ]
