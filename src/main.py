@@ -141,7 +141,7 @@ async def retrieve_item(retrieve_request: RetrieveRequest):
     related_memories = [
         {
             "similarity_score": r.similarity_score,
-            "memories": {
+            "memory": {
                 "memory_id": r.id,
                 "memory_type": r.memory_type,
                 "content": r.summary,

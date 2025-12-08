@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 from typing import List, Optional
+from datetime import datetime
 
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
@@ -433,8 +434,8 @@ class PgStore(BaseMemoryStore):
                     summary=db_item.summary,
                     embedding=db_item.embedding.tolist() if db_item.embedding is not None else [],
                     similarity_score=similarity_score,
-                    created_at=str(db_item.created_at),
-                    updated_at=str(db_item.updated_at)
+                    created_at=db_item.created_at.isoformat() if db_item.created_at else None,
+                    updated_at=db_item.updated_at.isoformat() if db_item.updated_at else None
                 )
                 memory_items.append(memory_item)
 
