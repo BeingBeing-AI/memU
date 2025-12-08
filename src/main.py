@@ -149,6 +149,11 @@ async def retrieve_item(retrieve_request: RetrieveRequest):
     return JSONResponse(content={"status": "success", "result": resp})
 
 
+@app.get("/health")
+async def health():
+    return JSONResponse(content={"status": "ok"})
+
+
 @app.get("/")
 async def root():
     return {"message": "Hello MemU user!"}

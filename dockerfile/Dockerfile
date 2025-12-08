@@ -30,8 +30,9 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src:$PYTHONPATH"
 
 CMD [ \
-  "python", "-m", "gunicorn", \
-  "--bind", "0.0.0.0:8000", \
-  "--worker-class", "uvicorn.workers.UvicornWorker", \
-  "main:app" \
+  "uv", "run", "uvicorn", \
+  "src.main:app", \
+  "--host", "0.0.0.0", \
+  "--port", "8000", \
+  "--reload" \
 ]
