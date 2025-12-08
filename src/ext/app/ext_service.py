@@ -1,9 +1,10 @@
 import json
 import logging
-from typing import Any
+from typing import Any, List
 
 from pydantic import BaseModel
 
+from ext.ext_models import ExtMemoryItem
 from ext.prompts.summary_profile import PROMPT
 from ext.store.pg_repo import PgStore, MemoryResourceModel
 from memu.app import MemoryService
@@ -62,7 +63,6 @@ class ExtMemoryService(MemoryService):
     def on_memorize_done(self, user: BaseModel | None, resource_url: str):
         self._get_user_context(user).store.update_resource_status(resource_url, "success")
 
-
     async def summary_user_profile(self, user: BaseModel | None):
         ctx = self._get_user_context(user)
         categories = ctx.store.get_all_categories()
@@ -98,3 +98,8 @@ class ExtMemoryService(MemoryService):
             "name": cat.name,
             "summary": cat.summary,
         } if cat else None
+
+    def retrieve_memory_items(self, user: BaseModel | None, qvec: List[float]) -> List[ExtMemoryItem]:
+        ctx = self._get_user_context(user)
+        return ctx.store.retrieve_memory_items(qvec)
+
