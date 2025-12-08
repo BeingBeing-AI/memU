@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from typing import List, Optional
 
@@ -124,9 +125,14 @@ class SharedEngine:
         self.engine.dispose()
 
 
+def _get_connection_string() -> str:
+    """Read connection string from PG_URL or fall back to local default."""
+    return os.getenv("PG_URL", "postgresql://root:dev123@localhost:5432/starfy")
+
+
 # 全局共享的 engine 实例
 _shared_engine: Optional[SharedEngine] = SharedEngine(
-    connection_string="postgresql://root:dev123@localhost:5432/starfy")
+    connection_string=_get_connection_string())
 
 
 class PgMemoryCategory(MemoryCategory):
