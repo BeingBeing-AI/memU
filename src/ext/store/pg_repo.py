@@ -13,6 +13,7 @@ from sqlalchemy import (
     Engine,
     Index,
     DateTime,
+    Enum,
 )
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
@@ -51,6 +52,7 @@ class MemoryResourceModel(Base):
     local_path = Column(Text, nullable=False)
     caption = Column(Text, nullable=True)
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=True)
+    process_status = Column(String(50), default="processing", nullable=False)
 
 
 class MemoryCategoryModel(Base):
@@ -146,6 +148,37 @@ class PgStore(BaseMemoryStore):
         self.engine = _shared_engine.engine
         self.session_local = _shared_engine.session
         self.categories = CategoriesAccessor(self)
+
+    def update_resource_status(self, resource_url: str, status: str) -> bool:
+        """更新资源的处理状态（仅限当前用户）"""
+        if status not in ["processing", "success"]:
+            raise ValueError("Invalid status. Must be one of: processing, success")
+
+        session = self.session_local()
+        try:
+            # 更新数据库中的状态
+            updated = session.query(MemoryResourceModel).filter(
+                MemoryResourceModel.url == resource_url,
+                MemoryResourceModel.user_id == self.user_id
+            ).update({"process_status": status})
+            session.commit()
+            return updated > 0
+        except Exception:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    def get_resource_by_url(self, url: str) -> Optional[MemoryResourceModel]:
+        """根据 url 查找资源（仅限当前用户）"""
+        session = self.session_local()
+        try:
+            return session.query(MemoryResourceModel).filter(
+                MemoryResourceModel.url == url,
+                MemoryResourceModel.user_id == self.user_id
+            ).first()
+        finally:
+            session.close()
 
     def create_resource(
             self, *, url: str, modality: str, local_path: str, caption: str = None

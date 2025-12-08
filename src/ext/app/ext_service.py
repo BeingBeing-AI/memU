@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from ext.prompts.summary_profile import PROMPT
-from ext.store.pg_repo import PgStore
+from ext.store.pg_repo import PgStore, MemoryResourceModel
 from memu.app import MemoryService
 from memu.app.service import _UserContext
 from memu.embedding import HTTPEmbeddingClient
@@ -55,6 +55,13 @@ class ExtMemoryService(MemoryService):
         self._contexts[key] = ctx
         self._start_category_initialization(ctx)
         return ctx
+
+    def get_resource_by_url(self, user: BaseModel | None, resource_url: str) -> MemoryResourceModel | None:
+        return self._get_user_context(user).store.get_resource_by_url(resource_url)
+
+    def on_memorize_done(self, user: BaseModel | None, resource_url: str):
+        self._get_user_context(user).store.update_resource_status(resource_url, "success")
+
 
     async def summary_user_profile(self, user: BaseModel | None):
         ctx = self._get_user_context(user)

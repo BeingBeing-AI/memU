@@ -28,6 +28,7 @@ class ConversationMessage(BaseModel):
 
 class MemorizeRequest(BaseModel):
     user_id: str
+    external_id: str
     conversation: List[ConversationMessage]
 
 
@@ -99,14 +100,20 @@ storage_dir.mkdir(parents=True, exist_ok=True)
 
 @app.post("/api/v1/memory/memorize")
 async def memorize(request: MemorizeRequest):
-    file_path = storage_dir / f"conversation-{uuid.uuid4().hex}.json"
+    user = DefaultUserModel(user_id=request.user_id)
+    external_id = request.external_id
+    file_path = storage_dir / external_id
+    resource_url = str(file_path)
+    # 幂等处理
+    resource = memory_service.get_resource_by_url(user, resource_url)
+    if resource:
+        return JSONResponse(content={"status": resource.process_status})
+
     with file_path.open("w", encoding="utf-8") as f:
         json.dump([msg.model_dump() for msg in request.conversation], f, ensure_ascii=False)
 
-    user = DefaultUserModel(user_id=request.user_id)
-    # memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id,
-    #                                                                               categories_ready=False)
-    await memory_service.memorize(resource_url=str(file_path), modality="conversation", user=user)
+    await memory_service.memorize(resource_url=resource_url, modality="conversation", user=user)
+    memory_service.on_memorize_done(user, resource_url)
     await memory_service.summary_user_profile(user=user)
     summaries = memory_service.get_all_category_summaries(user=user)
     return JSONResponse(content={"status": "success", "result": summaries})
