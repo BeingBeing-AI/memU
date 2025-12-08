@@ -157,7 +157,7 @@ async def retrieve_item(retrieve_request: RetrieveRequest):
         "total_found": len(related_memories),
         "related_memories": related_memories,
     }
-    return JSONResponse(content={"status": "success", "result": resp})
+    return JSONResponse(content=resp)
 
 
 @app.get("/")
