@@ -46,6 +46,16 @@ class ExtMemoryService(MemoryService):
             msg = f"Unknown embedding_client_backend '{self.embedding_config.client_backend}'"
             raise ValueError(msg)
 
+    def _get_user_context(self, user: BaseModel | None) -> _UserContext:
+        key = self._context_key(user)
+        ctx = self._contexts.get(key)
+        if ctx:
+            return ctx
+        ctx = ExtUserContext(user_id=user.user_id, categories_ready=not bool(self.category_configs))
+        self._contexts[key] = ctx
+        self._start_category_initialization(ctx)
+        return ctx
+
     async def summary_user_profile(self, user: BaseModel | None):
         ctx = self._get_user_context(user)
         categories = ctx.store.get_all_categories()
@@ -73,3 +83,11 @@ class ExtMemoryService(MemoryService):
             }
             for cat in categories
         ]
+
+    def get_category_summary(self, user: BaseModel | None, category_name: str):
+        ctx = self._get_user_context(user)
+        cat = ctx.store.get_category_by_name(category_name)
+        return {
+            "name": cat.name,
+            "summary": cat.summary,
+        } if cat else None

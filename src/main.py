@@ -16,7 +16,7 @@ from memu.app import DefaultUserModel
 load_dotenv()
 
 from fastapi.responses import JSONResponse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 
@@ -76,57 +76,70 @@ def init_memory_service():
 app = FastAPI()
 memory_service = init_memory_service()
 
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # 记录异常日志
+    traceback.print_exc()
+
+    # 返回统一的错误响应
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "message": "Internal server error occurred",
+            "detail": str(exc)
+        }
+    )
+
+
 storage_dir = Path(os.getenv("MEMU_STORAGE_DIR", "./data"))
 storage_dir.mkdir(parents=True, exist_ok=True)
 
 
 @app.post("/api/v1/memory/memorize")
 async def memorize(request: MemorizeRequest):
-    try:
-        file_path = storage_dir / f"conversation-{uuid.uuid4().hex}.json"
-        with file_path.open("w", encoding="utf-8") as f:
-            json.dump([msg.model_dump() for msg in request.conversation], f, ensure_ascii=False)
+    file_path = storage_dir / f"conversation-{uuid.uuid4().hex}.json"
+    with file_path.open("w", encoding="utf-8") as f:
+        json.dump([msg.model_dump() for msg in request.conversation], f, ensure_ascii=False)
 
-        user = DefaultUserModel(user_id=request.user_id)
-        memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id,
-                                                                                      categories_ready=False)
-        result = await memory_service.memorize(resource_url=str(file_path), modality="conversation", user=user)
-        await memory_service.summary_user_profile(user=user)
-        summaries = memory_service.get_all_category_summaries(user=user)
-        return JSONResponse(content={"status": "success", "result": summaries})
-    except Exception as exc:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(exc))
+    user = DefaultUserModel(user_id=request.user_id)
+    # memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id,
+    #                                                                               categories_ready=False)
+    await memory_service.memorize(resource_url=str(file_path), modality="conversation", user=user)
+    await memory_service.summary_user_profile(user=user)
+    summaries = memory_service.get_all_category_summaries(user=user)
+    return JSONResponse(content={"status": "success", "result": summaries})
+
+
+@app.post("/api/v1/memory/retrieve-category-summary")
+async def retrieve_category_summary(request: RetrieveRequest):
+    user = DefaultUserModel(user_id=request.user_id)
+    return memory_service.get_category_summary(user=user, category_name=request.query)
 
 
 @app.post("/retrieve")
 async def retrieve(payload: Dict[str, Any]):
     if "query" not in payload:
         raise HTTPException(status_code=400, detail="Missing 'query' in request body")
-    try:
-        result = await memory_service.retrieve([payload["query"]])
-        return JSONResponse(content={"status": "success", "result": result})
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    result = await memory_service.retrieve([payload["query"]])
+    return JSONResponse(content={"status": "success", "result": result})
 
 
-@app.post("/retrieve-item")
+@app.post("/api/v1/memory/retrieve-item")
 async def retrieve_item(retrieve_request: RetrieveRequest):
-    try:
-        qvec = (await memory_service.embedding_client.embed([retrieve_request.query]))[0]
-        pg_store: PgStore = memory_service.store
-        results = pg_store.retrieve_memory_items(qvec)
-        resp = [
-            {
-                "id": r.id,
-                "memory_type": r.memory_type,
-                "summary": r.summary,
-            }
-            for r in results
-        ]
-        return JSONResponse(content={"status": "success", "result": resp})
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    qvec = (await memory_service.embedding_client.embed([retrieve_request.query]))[0]
+    pg_store: PgStore = memory_service.store
+    results = pg_store.retrieve_memory_items(qvec)
+    resp = [
+        {
+            "id": r.id,
+            "memory_type": r.memory_type,
+            "summary": r.summary,
+        }
+        for r in results
+    ]
+    return JSONResponse(content={"status": "success", "result": resp})
 
 
 @app.get("/")

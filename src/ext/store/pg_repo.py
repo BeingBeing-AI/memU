@@ -464,6 +464,28 @@ class PgStore(BaseMemoryStore):
         finally:
             session.close()
 
+    def get_category_by_name(self, category_name: str) -> Optional[MemoryCategory]:
+        session = self.session_local()
+        try:
+            # 查询当前用户的所有类别
+            result = session.query(MemoryCategoryModel).filter(
+                MemoryCategoryModel.user_id == self.user_id,
+                MemoryCategoryModel.name == category_name
+            ).first()
+
+            if not result:
+                return None
+
+            return MemoryCategory(
+                id=str(result.id),
+                name=str(result.name),
+                description=str(result.description),
+                embedding=result.embedding.tolist() if result.embedding is not None else [],
+                summary=str(result.summary) if result.summary is not None else None,
+            )
+        finally:
+            session.close()
+
 
 class CategoriesAccessor:
     """Categories 访问器，提供类似字典的接口来访问数据库中的 MemoryCategory 对象"""
