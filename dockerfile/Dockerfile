@@ -1,12 +1,14 @@
 FROM python:3.14-slim
 
-ARG DEBIAN_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/debian"
-ARG DEBIAN_SECURITY_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/debian-security"
+ARG DEBIAN_MIRROR="https://mirrors.ivolces.com/debian"
+ARG DEBIAN_SECURITY_MIRROR="https://mirrors.ivolces.com/debian-security"
 ARG PYPI_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
 
 # Point apt and pip/uv to mirrors close to Beijing for faster downloads
 RUN set -eux; \
   . /etc/os-release; \
+  rm -f /etc/apt/sources.list.d/debian.sources; \
+  rm -f /etc/apt/sources.list.d/debian-security.sources || true; \
   printf '%s\n' \
     "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME} main contrib non-free non-free-firmware" \
     "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME}-updates main contrib non-free non-free-firmware" \
