@@ -22,4 +22,4 @@ test:
 	@uv run python -m pytest --cov --cov-config=pyproject.toml --cov-report=xml
 
 image: 
-	 docker buildx build --platform linux/amd64 -t starfy-docker-image-cn-shanghai.cr.volces.com/memu/memu-server:latest -f dockerfile/Dockerfile --push .
+	 docker buildx build --platform linux/amd64 -t starfy-docker-image-cn-shanghai.cr.volces.com/memu/memu-server:latest -f dockerfile/Dockerfile.local --push .
