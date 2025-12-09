@@ -56,7 +56,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN --mount=type=cache,target=/var/cache/apt \
   --mount=type=cache,target=/var/lib/apt \
   apt-get update \
-  && apt-get install -y --no-install-recommends curl pkg-config \
+  && apt-get install -y --no-install-recommends build-essential curl pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable \
