@@ -133,20 +133,36 @@ async def retrieve(payload: Dict[str, Any]):
     return JSONResponse(content={"status": "success", "result": result})
 
 
-@app.post("/api/v1/memory/retrieve-item")
+@app.post("/api/v1/memory/retrieve/related-memory-items")
 async def retrieve_item(retrieve_request: RetrieveRequest):
     qvec = (await memory_service.embedding_client.embed([retrieve_request.query]))[0]
-    pg_store: PgStore = memory_service.store
-    results = pg_store.retrieve_memory_items(qvec)
-    resp = [
+    user = DefaultUserModel(user_id=retrieve_request.user_id)
+    results = memory_service.retrieve_memory_items(user, qvec)
+    related_memories = [
         {
-            "id": r.id,
-            "memory_type": r.memory_type,
-            "summary": r.summary,
+            "similarity_score": r.similarity_score,
+            "memory": {
+                "memory_id": r.id,
+                "memory_type": r.memory_type,
+                "content": r.summary,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+                # "happened_at": r.happened_at
+            }
         }
         for r in results
     ]
-    return JSONResponse(content={"status": "success", "result": resp})
+    resp = {
+        "query": retrieve_request.query,
+        "total_found": len(related_memories),
+        "related_memories": related_memories,
+    }
+    return JSONResponse(content=resp)
+
+
+@app.get("/health")
+async def health():
+    return JSONResponse(content={"status": "ok"})
 
 
 @app.get("/")

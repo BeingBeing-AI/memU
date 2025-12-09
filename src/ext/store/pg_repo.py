@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import uuid
 from typing import List, Optional
+from datetime import datetime
 
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
@@ -19,6 +21,7 @@ from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
+from ext.ext_models import ExtMemoryItem
 from ext.store.base_repo import BaseMemoryStore
 from memu.models import (
     CategoryItem,
@@ -123,9 +126,14 @@ class SharedEngine:
         self.engine.dispose()
 
 
+def _get_connection_string() -> str:
+    """Read connection string from PG_URL or fall back to local default."""
+    return os.getenv("PG_URL", "postgresql://root:dev123@localhost:5432/starfy")
+
+
 # 全局共享的 engine 实例
 _shared_engine: Optional[SharedEngine] = SharedEngine(
-    connection_string="postgresql://root:dev123@localhost:5432/starfy")
+    connection_string=_get_connection_string())
 
 
 class PgMemoryCategory(MemoryCategory):
@@ -388,7 +396,7 @@ class PgStore(BaseMemoryStore):
 
     def retrieve_memory_items(
             self, qvec: List[float], top_k: int = 5, min_similarity: float = 0.3
-    ) -> List[MemoryItem]:
+    ) -> List[ExtMemoryItem]:
         """
         通过pgvector实现对memory_items表中embedding的向量检索（仅限当前用户）
 
@@ -404,9 +412,12 @@ class PgStore(BaseMemoryStore):
         try:
             # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
             # 余弦距离转为余弦相似度: similarity = 1 - distance
-            query = session.query(MemoryItemModel).filter(
+            query = session.query(
+                MemoryItemModel,
+                (1 - MemoryItemModel.embedding.cosine_distance(qvec)).label('similarity_score')
+            ).filter(
                 MemoryItemModel.user_id == self.user_id,
-                MemoryItemModel.embedding.cosine_distance(qvec) <= (1 - min_similarity)
+                (1 - MemoryItemModel.embedding.cosine_distance(qvec)) >= min_similarity
             ).order_by(
                 MemoryItemModel.embedding.cosine_distance(qvec)
             )
@@ -415,13 +426,16 @@ class PgStore(BaseMemoryStore):
 
             # 将数据库模型转换为MemoryItem对象
             memory_items = []
-            for db_item in results:
-                memory_item = MemoryItem(
+            for db_item, similarity_score in results:
+                memory_item = ExtMemoryItem(
                     id=db_item.id,
                     resource_id=db_item.resource_id,
                     memory_type=db_item.memory_type,
                     summary=db_item.summary,
                     embedding=db_item.embedding.tolist() if db_item.embedding is not None else [],
+                    similarity_score=similarity_score,
+                    created_at=db_item.created_at.isoformat() if db_item.created_at else None,
+                    updated_at=db_item.updated_at.isoformat() if db_item.updated_at else None
                 )
                 memory_items.append(memory_item)
 
