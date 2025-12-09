@@ -6,10 +6,13 @@ ARG PYPI_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
 
 # Point apt and pip/uv to mirrors close to Beijing for faster downloads
 RUN set -eux; \
-  sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
-  sed -i "s|https://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
-  sed -i "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
-  sed -i "s|https://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
+  . /etc/os-release; \
+  printf '%s\n' \
+    "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME} main contrib non-free non-free-firmware" \
+    "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME}-updates main contrib non-free non-free-firmware" \
+    "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME}-backports main contrib non-free non-free-firmware" \
+    "deb ${DEBIAN_SECURITY_MIRROR} ${VERSION_CODENAME}-security main contrib non-free non-free-firmware" \
+    > /etc/apt/sources.list; \
   printf "[global]\nindex-url = %s\n" "${PYPI_MIRROR}" > /etc/pip.conf
 
 ENV UV_INDEX_URL=${PYPI_MIRROR} \
