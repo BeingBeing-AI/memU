@@ -1,40 +1,21 @@
 import json
 import os
 import traceback
-import uuid
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from dotenv import load_dotenv
 
 from debug import memory_service
-from ext.app.ext_service import ExtMemoryService, ExtUserContext
+from ext.app.ext_service import ExtMemoryService
+from ext.ext_models import MemorizeRequest, RetrieveRequest
 from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
-from ext.store.pg_repo import PgStore
 from memu.app import DefaultUserModel
 
 load_dotenv()
 
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
-
-
-# Request models for API endpoints
-class ConversationMessage(BaseModel):
-    role: str
-    content: str
-
-
-class MemorizeRequest(BaseModel):
-    user_id: str
-    external_id: str
-    conversation: List[ConversationMessage]
-
-
-class RetrieveRequest(BaseModel):
-    user_id: str
-    query: str
 
 
 def init_memory_service():
@@ -134,10 +115,12 @@ async def retrieve(payload: Dict[str, Any]):
 
 
 @app.post("/api/v1/memory/retrieve/related-memory-items")
-async def retrieve_item(retrieve_request: RetrieveRequest):
-    qvec = (await memory_service.embedding_client.embed([retrieve_request.query]))[0]
-    user = DefaultUserModel(user_id=retrieve_request.user_id)
-    results = memory_service.retrieve_memory_items(user, qvec)
+async def retrieve_item(request: RetrieveRequest):
+    user = DefaultUserModel(user_id=request.user_id)
+    results = await memory_service.retrieve_memory_items(user, request.query,
+                                                         retrieved_content=request.retrieved_content,
+                                                         retrieve_type=request.retrieve_type,
+                                                         context_messages=request.context_messages)
     related_memories = [
         {
             "similarity_score": r.similarity_score,
@@ -153,7 +136,7 @@ async def retrieve_item(retrieve_request: RetrieveRequest):
         for r in results
     ]
     resp = {
-        "query": retrieve_request.query,
+        "query": request.query,
         "total_found": len(related_memories),
         "related_memories": related_memories,
     }
