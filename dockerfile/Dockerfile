@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.14-slim AS base
 
 ARG DEBIAN_MIRROR="https://mirrors.ivolces.com/debian"
 ARG DEBIAN_SECURITY_MIRROR="https://mirrors.ivolces.com/debian-security"
@@ -33,25 +33,65 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files needed for dependency resolution
+# -----------------------------------------------------------------------------
+# Dependency stage: resolve and install Python deps without the local project
+# -----------------------------------------------------------------------------
+FROM base AS deps
+
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --frozen --no-dev --no-install-project
 
-# Copy the application code
+# -----------------------------------------------------------------------------
+# Builder stage: compile the Rust extension and package memu
+# -----------------------------------------------------------------------------
+FROM base AS builder
+
+ENV CARGO_HOME=/root/.cargo \
+    RUSTUP_HOME=/root/.rustup
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install curl for rustup installation (isolated to this stage)
+RUN --mount=type=cache,target=/var/cache/apt \
+  --mount=type=cache,target=/var/lib/apt \
+  apt-get update \
+  && apt-get install -y --no-install-recommends curl pkg-config \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable \
+    && /root/.cargo/bin/rustc --version \
+    && /root/.cargo/bin/cargo --version
+
+RUN python -m pip install --no-cache-dir maturin==1.7.4
+
 COPY . .
 
-# Sync the project
-RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/app/target \
+    maturin build --release --locked --strip --out /tmp/dist
+
+RUN set -eux; \
+    wheel="$(ls -1 /tmp/dist/memu_py-*.whl | head -n 1)"; \
+    python -m pip install --no-deps --no-cache-dir --target /tmp/package "${wheel}"
+
+# -----------------------------------------------------------------------------
+# Runtime stage: start from cached deps, overlay source + compiled artifacts
+# -----------------------------------------------------------------------------
+FROM deps AS runtime
+
+# Copy the rest of the application (invalidates only when sources change)
+COPY . .
+
+# Overwrite the source package with the freshly built binary artifacts
+COPY --from=builder /tmp/package/memu /app/src/memu
 
 # Expose the port that FastAPI will run on
 EXPOSE 8000
 
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/src:$PYTHONPATH"
+ENV PYTHONPATH="/app/src:${PYTHONPATH:-}"
 
 CMD [ \
   "uvicorn", \
