@@ -4,7 +4,7 @@ from typing import Any, List
 
 from pydantic import BaseModel
 
-from ext.ext_models import ExtMemoryItem
+from ext.ext_models import ExtMemoryItem, ConversationMessage
 from ext.prompts.summary_profile import PROMPT
 from ext.store.pg_repo import PgStore, MemoryResourceModel
 from memu.app import MemoryService
@@ -99,7 +99,26 @@ class ExtMemoryService(MemoryService):
             "summary": cat.summary,
         } if cat else None
 
-    def retrieve_memory_items(self, user: BaseModel | None, qvec: List[float]) -> List[ExtMemoryItem]:
+    async def retrieve_memory_items(self, user: BaseModel | None, query: str,
+                                    context_messages: List[ConversationMessage] = None,
+                                    retrieved_content: str | None = None,
+                                    retrieve_type: str = "light", ) -> List[ExtMemoryItem]:
         ctx = self._get_user_context(user)
-        return ctx.store.retrieve_memory_items(qvec)
+        if retrieve_type == "light":
+            qvec = (await self.embedding_client.embed([query]))[0]
+            return ctx.store.retrieve_memory_items(qvec)
 
+        # 基于LLM+RAG的检索
+        # Step 1: Decide if retrieval is needed
+        needs_retrieval, rewritten_query = await self._decide_if_retrieval_needed(
+            query, context_messages, retrieved_content=retrieved_content
+        )
+        logger.info(f"retrieve_memory_items, query: {query}, context_messages: {context_messages}, "
+                    f"retrieved_content: {retrieved_content}, needs_retrieval: {needs_retrieval}, "
+                    f"rewritten_query: {rewritten_query}")
+
+        if not needs_retrieval:
+            return []
+
+        qvec = (await self.embedding_client.embed([rewritten_query]))[0]
+        return ctx.store.retrieve_memory_items(qvec)
