@@ -2,7 +2,7 @@ FROM python:3.14-slim
 
 ARG DEBIAN_MIRROR="https://mirrors.ivolces.com/debian"
 ARG DEBIAN_SECURITY_MIRROR="https://mirrors.ivolces.com/debian-security"
-ARG PYPI_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
+ARG PYPI_MIRROR="https://mirrors.ivolces.com/pypi/simple"
 
 # Point apt and pip/uv to mirrors close to Beijing for faster downloads
 RUN set -eux; \
