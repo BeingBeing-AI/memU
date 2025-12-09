@@ -50,8 +50,8 @@ FROM base AS builder
 
 ENV CARGO_HOME=/root/.cargo \
     RUSTUP_HOME=/root/.rustup \
-    RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
-    RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+    RUSTUP_DIST_SERVER=https://rsproxy.cn \
+    RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install curl for rustup installation (isolated to this stage)
@@ -61,7 +61,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
   && apt-get install -y --no-install-recommends build-essential curl pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
-RUN curl https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup-init.sh -sSf | sh -s -- -y --profile minimal --default-toolchain stable \
+RUN curl https://rsproxy.cn/rustup-init.sh -sSf | sh -s -- -y --profile minimal --default-toolchain stable \
     && /root/.cargo/bin/rustc --version \
     && /root/.cargo/bin/cargo --version
 
