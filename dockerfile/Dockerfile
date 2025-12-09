@@ -1,5 +1,20 @@
 FROM python:3.14-slim
 
+ARG DEBIAN_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/debian"
+ARG DEBIAN_SECURITY_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/debian-security"
+ARG PYPI_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
+
+# Point apt and pip/uv to mirrors close to Beijing for faster downloads
+RUN set -eux; \
+  sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
+  sed -i "s|https://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list; \
+  sed -i "s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
+  sed -i "s|https://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
+  printf "[global]\nindex-url = %s\n" "${PYPI_MIRROR}" > /etc/pip.conf
+
+ENV UV_INDEX_URL=${PYPI_MIRROR} \
+    PIP_INDEX_URL=${PYPI_MIRROR}
+
 # Install system build dependencies required by Rust-based Python packages
 RUN --mount=type=cache,target=/var/cache/apt \
   --mount=type=cache,target=/var/lib/apt \
