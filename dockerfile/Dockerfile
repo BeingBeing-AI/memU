@@ -1,7 +1,11 @@
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.14-slim
 
 # Install system build dependencies required by Rust-based Python packages
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt \
+  --mount=type=cache,target=/var/lib/apt \
+  apt-get update \
   && apt-get install -y --no-install-recommends build-essential \
   && rm -rf /var/lib/apt/lists/*
 
@@ -11,17 +15,19 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files
-COPY uv.lock pyproject.toml README.md ./
+# Copy dependency files needed for dependency resolution
+COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --frozen --no-dev --no-install-project
 
 # Copy the application code
 COPY . .
 
 # Sync the project
-RUN uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+  uv sync --frozen --no-dev
 
 # Expose the port that FastAPI will run on
 EXPOSE 8000
