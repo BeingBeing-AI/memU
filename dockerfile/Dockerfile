@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 FROM python:3.14-slim
 
 # Install system build dependencies required by Rust-based Python packages
