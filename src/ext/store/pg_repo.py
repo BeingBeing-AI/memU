@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import uuid
 from typing import List, Optional
-from datetime import datetime
 
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
@@ -15,11 +14,10 @@ from sqlalchemy import (
     Engine,
     Index,
     DateTime,
-    Enum,
 )
-from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.sql import func
 
 from ext.ext_models import ExtMemoryItem
 from ext.store.base_repo import BaseMemoryStore
@@ -92,7 +90,7 @@ class SharedEngine:
     """全局共享的 engine 封装类"""
 
     def __init__(self, connection_string: str):
-        self.engine, self.session = self.init_pg_engine(connection_string, echo=True)
+        self.engine, self.session = self.init_pg_engine(connection_string)
 
     @staticmethod
     def init_pg_engine(connection_string: str, echo: bool = False) -> tuple[Engine, sessionmaker[Session]]:

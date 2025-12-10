@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import traceback
 from pathlib import Path
@@ -16,6 +17,8 @@ load_dotenv()
 
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
+
+logger = logging.getLogger(__file__)
 
 
 def init_memory_service():
@@ -62,7 +65,7 @@ memory_service = init_memory_service()
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     # 记录异常日志
-    traceback.print_exc()
+    logger.exception("Failed to handle request")
 
     # 返回统一的错误响应
     return JSONResponse(
@@ -81,6 +84,7 @@ storage_dir.mkdir(parents=True, exist_ok=True)
 
 @app.post("/api/v1/memory/memorize")
 async def memorize(request: MemorizeRequest):
+    logger.info(f"memorize, request: {request}")
     user = DefaultUserModel(user_id=request.user_id)
     external_id = request.external_id
     file_path = storage_dir / external_id
@@ -116,6 +120,7 @@ async def retrieve(payload: Dict[str, Any]):
 
 @app.post("/api/v1/memory/retrieve/related-memory-items")
 async def retrieve_item(request: RetrieveRequest):
+    logger.info(f"retrieve_item, request: {request}")
     user = DefaultUserModel(user_id=request.user_id)
     results = await memory_service.retrieve_memory_items(user, request.query,
                                                          retrieved_content=request.retrieved_content,
