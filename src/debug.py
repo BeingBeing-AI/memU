@@ -1,6 +1,6 @@
 import json
+import logging
 import os
-import time
 
 from dotenv import load_dotenv
 
@@ -10,8 +10,10 @@ from ext.prompts.summary_profile import PROMPT
 load_dotenv()
 
 from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
-from ext.store.pg_repo import PgStore
 from memu.app import DefaultUserModel
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__file__)
 
 
 def init_memory_service():
@@ -91,27 +93,16 @@ async def test_retrieve():
         print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
 
 async def test_custom_retrieve():
-    query = ""
-    qvec = (await memory_service.embedding_client.embed([query]))[0]
-    pg_store: PgStore = memory_service.store
-    start_time = time.time()
-    # results = pg_store.retrieve_memory_categories(qvec)
-    # print(f"Time: {time.time() - start_time:.2f}s")
-    # [print(f"{r.name}: {r.summary}\n") for r in results if r]
-
-    # results = await  memory_service._rank_categories_by_summary(qvec, top_k=5)
-    start_time = time.time()
-    results = pg_store.retrieve_memory_items(qvec, min_similarity=0.3)
-    print(f"Time: {time.time() - start_time:.2f}s")
-    [print(f"{r.memory_type}: {r.summary}\n") for r in results if r]
-
-    # results = pg_store.retrieve_memory_categories(qvec)
-    # print([f"{r.name}: {r.summary}" for r in results if r])
-
+    # query = "今天要去见新的投资人"
+    query = "把把胡今天生病了"
+    result = await memory_service.retrieve_memory_items(user=DefaultUserModel(user_id="6"), query=query,
+                                                        retrieve_type="custom")
+    for r in result:
+        print(f"  - [{r.memory_type}] {r.summary[:100]}...")
 
 async def main():
-    await test_memorize("silvia")
-    # await test_custom_retrieve()
+    # await test_memorize("silvia")
+    await test_custom_retrieve()
     # await summary_categories()
 
 
