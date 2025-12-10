@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Sequence
 from typing import Any, List
 
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ from ext.store.pg_repo import PgStore, MemoryResourceModel
 from memu.app import MemoryService
 from memu.app.service import _UserContext
 from memu.embedding import HTTPEmbeddingClient
+from memu.models import MemoryType
 
 logger = logging.getLogger(__file__)
 
@@ -126,3 +128,22 @@ class ExtMemoryService(MemoryService):
 
         qvec = (await self.embedding_client.embed([rewritten_query]))[0]
         return ctx.store.retrieve_memory_items(qvec)
+
+    def _parse_structured_entries(
+        self, memory_types: list[MemoryType], responses: Sequence[str]
+    ) -> list[tuple[MemoryType, str, list[str]]]:
+        entries: list[tuple[MemoryType, str, list[str]]] = []
+        for mtype, response in zip(memory_types, responses, strict=True):
+            parsed = self._parse_memory_type_response(response)
+            if not parsed:
+                continue
+                # fallback_entry = response.strip()
+                # if fallback_entry:
+                #     entries.append((mtype, fallback_entry, []))
+            for entry in parsed:
+                content = (entry.get("content") or "").strip()
+                if not content:
+                    continue
+                cat_names = [c.strip() for c in entry.get("categories", []) if isinstance(c, str) and c.strip()]
+                entries.append((mtype, content, cat_names))
+        return entries
