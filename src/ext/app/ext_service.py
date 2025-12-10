@@ -66,12 +66,16 @@ class ExtMemoryService(MemoryService):
     async def summary_user_profile(self, user: BaseModel | None):
         ctx = self._get_user_context(user)
         categories = ctx.store.get_all_categories()
+        valid_categories = [cat for cat in categories if cat.summary]
+        if not valid_categories:
+            logger.info(f"No categories to summarize for user {user.user_id}")
+            return
         formated = [
             {
                 "name": cat.name,
                 "summary": cat.summary,
             }
-            for cat in categories
+            for cat in valid_categories
         ]
         response = await self.llm_client.summarize(system_prompt=PROMPT, text=json.dumps(formated, indent=2),
                                                    reasoning_effort="medium")
