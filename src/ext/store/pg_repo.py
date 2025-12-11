@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from typing import List, Optional
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Engine,
     Index,
     DateTime,
+    Boolean,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -28,6 +30,8 @@ from memu.models import (
     MemoryType,
     Resource,
 )
+
+logger = logging.getLogger(__name__)
 
 VECTOR_DIMENSION = 1024
 
@@ -84,6 +88,7 @@ class MemoryItemModel(Base):
     memory_type = Column(String(50), nullable=False)
     summary = Column(Text, nullable=False)
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=False)
+    is_deleted = Column(Boolean, default=False, nullable=False)
 
 
 class SharedEngine:
@@ -283,7 +288,11 @@ class PgStore(BaseMemoryStore):
             memory_type: MemoryType,
             summary: str,
             embedding: List[float],
+            remove_similarity: float = 0.9,
     ) -> MemoryItem:
+        if remove_similarity:
+            self.remove_similar_items(summary, embedding, min_similarity=remove_similarity)
+
         """创建记忆项"""
         session = self.session_local()
         try:
@@ -295,6 +304,7 @@ class PgStore(BaseMemoryStore):
                 memory_type=memory_type,
                 summary=summary,
                 embedding=embedding,
+                is_deleted=False,
             )
 
             session.add(db_item)
@@ -311,6 +321,32 @@ class PgStore(BaseMemoryStore):
         finally:
             session.close()
 
+    def remove_similar_items(self, summary, embedding, min_similarity):
+        related_items = self.retrieve_memory_items(embedding, min_similarity=min_similarity)
+        if related_items:
+            logger.info(f"Removing {len(related_items)} similar items, summary: {summary}")
+        for related_item in related_items:
+            logger.info(f"Remove item: {related_item.memory_type} - {related_item.summary}")
+            self.remove_memory_item(related_item.id)
+
+    def remove_memory_item(self, item_id: str) -> bool:
+        """Soft delete a memory item belonging to the current user."""
+        session = self.session_local()
+        try:
+            updated = session.query(MemoryItemModel).filter(
+                MemoryItemModel.id == item_id,
+                MemoryItemModel.user_id == self.user_id,
+                MemoryItemModel.is_deleted.is_(False),
+            ).update({"is_deleted": True})
+            session.commit()
+            return updated > 0
+        except Exception:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+
     def link_item_category(self, item_id: str, cat_id: str) -> CategoryItem:
         """链接记忆项和类别（验证item属于当前用户）"""
         session = self.session_local()
@@ -318,7 +354,8 @@ class PgStore(BaseMemoryStore):
             # 首先验证item是否属于当前用户
             item_exists = session.query(MemoryItemModel).filter(
                 MemoryItemModel.id == item_id,
-                MemoryItemModel.user_id == self.user_id
+                MemoryItemModel.user_id == self.user_id,
+                MemoryItemModel.is_deleted.is_(False),
             ).first()
 
             if not item_exists:
@@ -361,7 +398,8 @@ class PgStore(BaseMemoryStore):
         session = self.session_local()
         try:
             db_items = session.query(MemoryItemModel).filter(
-                MemoryItemModel.user_id == self.user_id
+                MemoryItemModel.user_id == self.user_id,
+                MemoryItemModel.is_deleted.is_(False),
             ).all()
             for db_item in db_items:
                 item = MemoryItem(
@@ -393,7 +431,7 @@ class PgStore(BaseMemoryStore):
             session.close()
 
     def retrieve_memory_items(
-            self, qvec: List[float], top_k: int = 5, min_similarity: float = 0.3
+            self, qvec: List[float], top_k: int = 10, min_similarity: float = 0.3
     ) -> List[ExtMemoryItem]:
         """
         通过pgvector实现对memory_items表中embedding的向量检索（仅限当前用户）
@@ -415,6 +453,7 @@ class PgStore(BaseMemoryStore):
                 (1 - MemoryItemModel.embedding.cosine_distance(qvec)).label('similarity_score')
             ).filter(
                 MemoryItemModel.user_id == self.user_id,
+                MemoryItemModel.is_deleted.is_(False),
                 (1 - MemoryItemModel.embedding.cosine_distance(qvec)) >= min_similarity
             ).order_by(
                 MemoryItemModel.embedding.cosine_distance(qvec)
