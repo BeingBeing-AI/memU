@@ -85,6 +85,7 @@ class ExtMemoryService(MemoryService):
         cat = ctx.store.get_or_create_category(name="user_profile", description="summary of user profile",
                                                embedding=None)
         cat.summary = response
+        return response
 
     def get_all_category_summaries(self, user: BaseModel | None):
         ctx = self._get_user_context(user)

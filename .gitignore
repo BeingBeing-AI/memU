@@ -210,3 +210,9 @@ models/
 .env.*.local
 secrets.txt
 api_keys.txt
+
+##############################
+## AI Tools
+##############################
+AGENTS.md
+claude.md

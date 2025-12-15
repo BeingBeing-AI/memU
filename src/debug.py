@@ -70,17 +70,8 @@ async def test_memorize(user_id):
     # await memory_service.summary_user_profile(user)
 
 
-async def summary_categories():
-    categories = memory_service.store.get_all_categories()
-    formated = [
-        {
-            "name": cat.name,
-            "summary": cat.summary,
-        }
-        for cat in categories
-    ]
-    response = await memory_service.llm_client.summarize(system_prompt=PROMPT, text=json.dumps(formated, indent=2))
-    print(response)
+async def summary_categories(user_id):
+    await memory_service.summary_user_profile(user=DefaultUserModel(user_id=user_id))
 
 
 async def test_retrieve():
@@ -93,17 +84,17 @@ async def test_retrieve():
         print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
 
 async def test_custom_retrieve():
-    # query = "今天要去见新的投资人"
-    query = "把把胡今天生病了"
-    result = await memory_service.retrieve_memory_items(user=DefaultUserModel(user_id="6"), query=query,
-                                                        retrieve_type="custom")
+    query = "今天要去见新的投资人"
+    # query = "把把胡今天生病了"
+    result = await memory_service.retrieve_memory_items(user=DefaultUserModel(user_id="cobe"), query=query,
+                                                        retrieve_type="light")
     for r in result:
-        print(f"  - [{r.memory_type}] {r.summary[:100]}...")
+        print(f"  - [{r.memory_type}] {r.summary}")
 
 async def main():
-    # await test_memorize("silvia")
-    await test_custom_retrieve()
-    # await summary_categories()
+    # await test_memorize("cobe")
+    # await test_custom_retrieve()
+    await summary_categories("cobe")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 
 from debug import memory_service
 from ext.app.ext_service import ExtMemoryService
-from ext.ext_models import MemorizeRequest, RetrieveRequest
+from ext.ext_models import MemorizeRequest, RetrieveRequest, MultiRetrieveRequest, WeightedQuery
 from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
 from memu.app import DefaultUserModel
 
@@ -99,9 +100,17 @@ async def memorize(request: MemorizeRequest):
 
     await memory_service.memorize(resource_url=resource_url, modality="conversation", user=user)
     memory_service.on_memorize_done(user, resource_url)
-    await memory_service.summary_user_profile(user=user)
+    if request.summary_user_profile:
+        await memory_service.summary_user_profile(user=user)
     summaries = memory_service.get_all_category_summaries(user=user)
     return JSONResponse(content={"status": "success", "result": summaries})
+
+
+@app.post("/api/v1/memory/summary-user-profile")
+async def summary_user_profile(user_id: str):
+    user = DefaultUserModel(user_id=user_id)
+    resp = await memory_service.summary_user_profile(user=user)
+    return JSONResponse(content={"status": "success", "result": resp})
 
 
 @app.post("/api/v1/memory/retrieve-category-summary")
@@ -142,6 +151,59 @@ async def retrieve_item(request: RetrieveRequest):
     ]
     resp = {
         "query": request.query,
+        "total_found": len(related_memories),
+        "related_memories": related_memories,
+    }
+    return JSONResponse(content=resp)
+
+
+@app.post("/api/v1/memory/retrieve/related-memory-items/multi")
+async def retrieve_items_by_multi_queries(request: MultiRetrieveRequest):
+    if not request.queries:
+        raise HTTPException(status_code=400, detail="`queries` must not be empty")
+
+    user = DefaultUserModel(user_id=request.user_id)
+
+    async def fetch_results(weighted_query: WeightedQuery):
+        items = await memory_service.retrieve_memory_items(
+            user,
+            weighted_query.query,
+            retrieve_type=request.retrieve_type,
+        )
+        return weighted_query, items
+
+    query_results = await asyncio.gather(*(fetch_results(q) for q in request.queries))
+
+    aggregated: Dict[str, Dict[str, Any]] = {}
+    for weighted_query, items in query_results:
+        for item in items:
+            weighted_score = item.similarity_score * weighted_query.weight
+            if item.id not in aggregated:
+                aggregated[item.id] = {
+                    "memory": {
+                        "memory_id": item.id,
+                        "memory_type": item.memory_type,
+                        "content": item.summary,
+                        "created_at": item.created_at,
+                        "updated_at": item.updated_at,
+                    },
+                    "similarity_score": item.similarity_score,
+                    "weighted_score": weighted_score,
+                }
+                continue
+
+            aggregated_item = aggregated[item.id]
+            aggregated_item["weighted_score"] += weighted_score
+            if item.similarity_score > aggregated_item["similarity_score"]:
+                aggregated_item["similarity_score"] = item.similarity_score
+
+    related_memories = sorted(
+        aggregated.values(),
+        key=lambda entry: entry["weighted_score"],
+        reverse=True,
+    )
+
+    resp = {
         "total_found": len(related_memories),
         "related_memories": related_memories,
     }
