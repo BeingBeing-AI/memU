@@ -95,9 +95,5 @@ EXPOSE 8000
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src:${PYTHONPATH:-}"
 
-CMD [ \
-  "uvicorn", \
-  "src.main:app", \
-  "--host", "0.0.0.0", \
-  "--port", "8000" \
-]
+# 使用 Gunicorn 启动，设置 worker 数量
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "8", "-b", "0.0.0.0:8000", "src.main:app"]
