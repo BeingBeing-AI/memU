@@ -324,9 +324,9 @@ class PgStore(BaseMemoryStore):
     def remove_similar_items(self, summary, embedding, min_similarity):
         related_items = self.retrieve_memory_items(embedding, min_similarity=min_similarity)
         if related_items:
-            logger.info(f"Removing {len(related_items)} similar items, summary: {summary}")
+            removed_items_str = "\n".join([f"{item.memory_type} - {item.summary}" for item in related_items])
+            logger.info(f"Removing {len(related_items)} similar items, new summary: {summary}\nRemoved items: {removed_items_str}")
         for related_item in related_items:
-            logger.info(f"Remove item: {related_item.memory_type} - {related_item.summary}")
             self.remove_memory_item(related_item.id)
 
     def remove_memory_item(self, item_id: str) -> bool:
