@@ -103,7 +103,7 @@ async def memorize(request: MemorizeRequest):
     if request.summary_user_profile:
         await memory_service.summary_user_profile(user=user)
     summaries = memory_service.get_all_category_summaries(user=user)
-    return JSONResponse(content={"status": "success", "result": summaries})
+    return JSONResponse(content={"status": "success", "detail": summaries})
 
 
 @app.post("/api/v1/memory/summary-user-profile")
