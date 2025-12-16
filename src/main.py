@@ -93,6 +93,7 @@ async def memorize(request: MemorizeRequest):
     # 幂等处理
     resource = memory_service.get_resource_by_url(user, resource_url)
     if resource:
+        logger.info(f"Resource {resource.url} already exists, skipping memorization")
         return JSONResponse(content={"status": resource.process_status})
 
     with file_path.open("w", encoding="utf-8") as f:
