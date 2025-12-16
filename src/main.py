@@ -103,14 +103,14 @@ async def memorize(request: MemorizeRequest):
     if request.summary_user_profile:
         await memory_service.summary_user_profile(user=user)
     summaries = memory_service.get_all_category_summaries(user=user)
-    return JSONResponse(content={"status": "success", "detail": summaries})
+    return JSONResponse(content={"status": "SUCCESS", "detail": summaries})
 
 
 @app.post("/api/v1/memory/summary-user-profile")
 async def summary_user_profile(user_id: str):
     user = DefaultUserModel(user_id=user_id)
     resp = await memory_service.summary_user_profile(user=user)
-    return JSONResponse(content={"status": "success", "result": resp})
+    return JSONResponse(content={"status": "SUCCESS", "result": resp})
 
 
 @app.post("/api/v1/memory/retrieve-category-summary")
@@ -124,7 +124,7 @@ async def retrieve(payload: Dict[str, Any]):
     if "query" not in payload:
         raise HTTPException(status_code=400, detail="Missing 'query' in request body")
     result = await memory_service.retrieve([payload["query"]])
-    return JSONResponse(content={"status": "success", "result": result})
+    return JSONResponse(content={"status": "SUCCESS", "result": result})
 
 
 @app.post("/api/v1/memory/retrieve/related-memory-items")
