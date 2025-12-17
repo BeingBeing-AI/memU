@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import traceback
 from pathlib import Path
 from typing import Dict, Any
 
@@ -18,6 +17,7 @@ load_dotenv()
 
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 
 logger = logging.getLogger(__file__)
 
@@ -59,14 +59,35 @@ def init_memory_service():
     return memory_service
 
 
-app = FastAPI()
+app = FastAPI(strict_validation=False)
 memory_service = init_memory_service()
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Log validation errors with the original payload for debugging
+    try:
+        body = await request.body()
+    except Exception:  # pragma: no cover - defensive logging
+        body = b"<unable to read body>"
+
+    logger.warning(
+        "Validation error for %s %s: %s | body=%s",
+        request.method,
+        request.url,
+        exc.errors(),
+        body.decode("utf-8", errors="replace"),
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"status": "error", "message": "Request validation failed", "detail": exc.errors()},
+    )
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     # 记录异常日志
-    logger.exception("Failed to handle request")
+    logger.exception(f"Failed to handle request {request.method} {request.url}")
 
     # 返回统一的错误响应
     return JSONResponse(
@@ -109,6 +130,7 @@ async def memorize(request: MemorizeRequest):
 
 @app.post("/api/v1/memory/summary-user-profile")
 async def summary_user_profile(user_id: str):
+    logger.info(f"summary_user_profile, user_id: {user_id}")
     user = DefaultUserModel(user_id=user_id)
     resp = await memory_service.summary_user_profile(user=user)
     return JSONResponse(content={"status": "SUCCESS", "result": resp})
@@ -122,6 +144,7 @@ async def retrieve_category_summary(request: RetrieveRequest):
 
 @app.post("/retrieve")
 async def retrieve(payload: Dict[str, Any]):
+    logger.info(f"retrieve, payload: {payload}")
     if "query" not in payload:
         raise HTTPException(status_code=400, detail="Missing 'query' in request body")
     result = await memory_service.retrieve([payload["query"]])
@@ -129,39 +152,12 @@ async def retrieve(payload: Dict[str, Any]):
 
 
 @app.post("/api/v1/memory/retrieve/related-memory-items")
-async def retrieve_item(request: RetrieveRequest):
-    logger.info(f"retrieve_item, request: {request}")
-    user = DefaultUserModel(user_id=request.user_id)
-    results = await memory_service.retrieve_memory_items(user, request.query,
-                                                         retrieved_content=request.retrieved_content,
-                                                         retrieve_type=request.retrieve_type,
-                                                         context_messages=request.context_messages)
-    related_memories = [
-        {
-            "similarity_score": r.similarity_score,
-            "memory": {
-                "memory_id": r.id,
-                "memory_type": r.memory_type,
-                "content": r.summary,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
-                # "happened_at": r.happened_at
-            }
-        }
-        for r in results
-    ]
-    resp = {
-        "query": request.query,
-        "total_found": len(related_memories),
-        "related_memories": related_memories,
-    }
-    return JSONResponse(content=resp)
-
-
-@app.post("/api/v1/memory/retrieve/related-memory-items/multi")
-async def retrieve_items_by_multi_queries(request: MultiRetrieveRequest):
+async def retrieve_items_by_queries(request: MultiRetrieveRequest):
+    logger.info(f"retrieve_items_by_queries, request: {request}")
     if not request.queries:
-        raise HTTPException(status_code=400, detail="`queries` must not be empty")
+        if not request.query:
+            raise HTTPException(status_code=400, detail="`query` must not be empty")
+        request.queries = [WeightedQuery(query=request.query, weight=1.0)]
 
     user = DefaultUserModel(user_id=request.user_id)
 
