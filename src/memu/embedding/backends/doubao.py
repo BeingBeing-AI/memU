@@ -37,10 +37,7 @@ class DoubaoEmbeddingBackend(EmbeddingBackend):
 
     def build_embedding_payload(self, *, inputs: list[str], embed_model: str) -> dict[str, Any]:
         """Build payload for standard text embeddings."""
-        if "vision" in embed_model:
-            return {"model": embed_model, "input": [{"type": "text", "text": t} for t in inputs]}
-        else:
-            return {"model": embed_model, "input": inputs, "encoding_format": "float"}
+        return {"model": embed_model, "input": inputs, "encoding_format": "float"}
 
     def parse_embedding_response(self, data: dict[str, Any]) -> list[list[float]]:
         """Parse embedding response."""

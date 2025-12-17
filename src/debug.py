@@ -4,17 +4,15 @@ import os
 
 from dotenv import load_dotenv
 
-from ext.app.ext_service import ExtUserContext, ExtMemoryService
-from ext.prompts.summary_profile import PROMPT
+from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
 
 load_dotenv()
 
-from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
+from ext.app.ext_service import ExtUserContext, ExtMemoryService
 from memu.app import DefaultUserModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__file__)
-
 
 def init_memory_service():
     memory_service = ExtMemoryService(
@@ -29,6 +27,7 @@ def init_memory_service():
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "api_key": os.getenv("QWEN_API_KEY"),
             "embed_model": "text-embedding-v4",
+            "batch_size": 10
         },
         # embedding_config={
         #     "client_backend": "sdk",
@@ -47,16 +46,18 @@ def init_memory_service():
         azure_endpoint="https://gpt-5-10.openai.azure.com",
         api_key=os.getenv("GPT_API_KEY"),
         api_version="2025-01-01-preview",
-        chat_model="gpt-5.1",
+        chat_model=os.getenv("OPENAI_MODEL_NAME", "gpt-5.1-chat"),
     )
 
     return memory_service
 
 memory_service = init_memory_service()
 
+
 async def test_memorize(user_id):
     user = DefaultUserModel(user_id=user_id)
-    memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id, categories_ready=False)
+    memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id,
+                                                                                  categories_ready=False)
     # Memorize
     for i in range(0, 2):
         file_path = os.path.abspath(f"../data/{user_id}/session_{i}.json")
@@ -83,6 +84,7 @@ async def test_retrieve():
     for item in result_rag.get('items', [])[:3]:
         print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
 
+
 async def test_custom_retrieve():
     query = "今天要去见新的投资人"
     # query = "把把胡今天生病了"
@@ -91,12 +93,14 @@ async def test_custom_retrieve():
     for r in result:
         print(f"  - [{r.memory_type}] {r.summary}")
 
+
 async def main():
-    # await test_memorize("cobe")
+    await test_memorize("cobe")
     # await test_custom_retrieve()
-    await summary_categories("cobe")
+    # await summary_categories("cobe")
 
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())
