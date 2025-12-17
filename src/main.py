@@ -53,7 +53,7 @@ def init_memory_service():
         azure_endpoint="https://gpt-5-10.openai.azure.com",
         api_key=os.getenv("GPT_API_KEY"),
         api_version="2025-01-01-preview",
-        chat_model="gpt-5.1",
+        chat_model=os.getenv("OPENAI_MODEL_NAME", "gpt-5.1-chat"),
     )
 
     return memory_service
