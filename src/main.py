@@ -35,7 +35,6 @@ def init_memory_service():
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "api_key": os.getenv("QWEN_API_KEY"),
             "embed_model": "text-embedding-v4",
-            "batch_size": 10
         },
         # embedding_config={
         #     "client_backend": "sdk",

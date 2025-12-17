@@ -26,6 +26,29 @@ class ExtUserContext(_UserContext):
 
 
 class ExtMemoryService(MemoryService):
+    def _init_embedding_client(self) -> Any:
+        """Initialize embedding client based on configuration."""
+        backend = self.embedding_config.client_backend
+        if backend == "sdk":
+            from ext.embedding.ext_openai_sdk import ExtOpenAIEmbeddingSDKClient
+
+            return ExtOpenAIEmbeddingSDKClient(
+                base_url=self.embedding_config.base_url,
+                api_key=self.embedding_config.api_key,
+                embed_model=self.embedding_config.embed_model,
+            )
+        elif backend == "httpx":
+            return HTTPEmbeddingClient(
+                base_url=self.embedding_config.base_url,
+                api_key=self.embedding_config.api_key,
+                embed_model=self.embedding_config.embed_model,
+                provider=self.embedding_config.provider,
+                endpoint_overrides=self.embedding_config.endpoint_overrides,
+            )
+        else:
+            msg = f"Unknown embedding_client_backend '{self.embedding_config.client_backend}'"
+            raise ValueError(msg)
+
     def _get_user_context(self, user: BaseModel | None) -> _UserContext:
         key = self._context_key(user)
         ctx = self._contexts.get(key)
