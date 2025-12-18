@@ -44,8 +44,8 @@ class WeightedQuery(NonStrictBaseModel):
 
 class MultiRetrieveRequest(NonStrictBaseModel):
     user_id: str
-    queries: List[WeightedQuery] = None
-    query: str = None
+    queries: List[WeightedQuery] | None = None
+    query: str | None = None
     top_k: int = 10
     min_similarity: float = 0.3
     retrieve_type: str = "light"
