@@ -109,11 +109,12 @@ class ExtMemoryService(MemoryService):
     async def retrieve_memory_items(self, user: BaseModel | None, query: str,
                                     context_messages: List[ConversationMessage] = None,
                                     retrieved_content: str | None = None,
+                                    top_k: int = 10, min_similarity: float = 0.3,
                                     retrieve_type: str = "light", ) -> List[ExtMemoryItem]:
         ctx = self._get_user_context(user)
         if retrieve_type == "light":
             qvec = (await self.embedding_client.embed([query]))[0]
-            return ctx.store.retrieve_memory_items(qvec)
+            return ctx.store.retrieve_memory_items(qvec, top_k=top_k, min_similarity=min_similarity)
 
         # 基于LLM+RAG的检索
         # Step 1: Decide if retrieval is needed
@@ -128,7 +129,7 @@ class ExtMemoryService(MemoryService):
             return []
 
         qvec = (await self.embedding_client.embed([rewritten_query]))[0]
-        return ctx.store.retrieve_memory_items(qvec)
+        return ctx.store.retrieve_memory_items(qvec, top_k=top_k, min_similarity=min_similarity)
 
     def _parse_structured_entries(
         self, memory_types: list[MemoryType], responses: Sequence[str]

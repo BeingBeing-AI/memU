@@ -165,6 +165,8 @@ async def retrieve_items_by_queries(request: MultiRetrieveRequest):
         items = await memory_service.retrieve_memory_items(
             user,
             weighted_query.query,
+            top_k=request.top_k,
+            min_similarity=request.min_similarity,
             retrieve_type=request.retrieve_type,
         )
         return weighted_query, items

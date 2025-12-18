@@ -1,37 +1,5 @@
-FROM python:3.14-slim AS base
-
-ARG DEBIAN_MIRROR="https://mirrors.ivolces.com/debian"
-ARG DEBIAN_SECURITY_MIRROR="https://mirrors.ivolces.com/debian-security"
-ARG PYPI_MIRROR="https://mirrors.ivolces.com/pypi/simple"
-
-# Point apt and pip/uv to mirrors close to Beijing for faster downloads
-RUN set -eux; \
-  . /etc/os-release; \
-  rm -f /etc/apt/sources.list.d/debian.sources; \
-  rm -f /etc/apt/sources.list.d/debian-security.sources || true; \
-  printf '%s\n' \
-    "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME} main contrib non-free non-free-firmware" \
-    "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME}-updates main contrib non-free non-free-firmware" \
-    "deb ${DEBIAN_MIRROR} ${VERSION_CODENAME}-backports main contrib non-free non-free-firmware" \
-    "deb ${DEBIAN_SECURITY_MIRROR} ${VERSION_CODENAME}-security main contrib non-free non-free-firmware" \
-    > /etc/apt/sources.list; \
-  printf "[global]\nindex-url = %s\n" "${PYPI_MIRROR}" > /etc/pip.conf
-
-ENV UV_INDEX_URL=${PYPI_MIRROR} \
-    PIP_INDEX_URL=${PYPI_MIRROR}
-
-# Install system build dependencies required by Rust-based Python packages
-RUN --mount=type=cache,target=/var/cache/apt \
-  --mount=type=cache,target=/var/lib/apt \
-  apt-get update \
-  && apt-get install -y --no-install-recommends build-essential \
-  && rm -rf /var/lib/apt/lists/*
-
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-# Set working directory
-WORKDIR /app
+ARG BASE_IMAGE=starfy-docker-image-cn-shanghai.cr.volces.com/memu-build-base:1.0.0
+FROM ${BASE_IMAGE} AS base
 
 # -----------------------------------------------------------------------------
 # Dependency stage: resolve and install Python deps without the local project
@@ -53,19 +21,6 @@ ENV CARGO_HOME=/root/.cargo \
     RUSTUP_DIST_SERVER=https://rsproxy.cn \
     RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
 ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install curl for rustup installation (isolated to this stage)
-RUN --mount=type=cache,target=/var/cache/apt \
-  --mount=type=cache,target=/var/lib/apt \
-  apt-get update \
-  && apt-get install -y --no-install-recommends build-essential curl pkg-config \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN curl https://rsproxy.cn/rustup-init.sh -sSf | sh -s -- -y --profile minimal --default-toolchain stable \
-    && /root/.cargo/bin/rustc --version \
-    && /root/.cargo/bin/cargo --version
-
-RUN python -m pip install --no-cache-dir maturin==1.7.4
 
 COPY . .
 
