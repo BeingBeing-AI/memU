@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=starfy-docker-image-cn-shanghai.cr.volces.com/memu-build-base:1.0.0
+ARG BASE_IMAGE=starfy-docker-image-cn-shanghai.cr.volces.com/memu/memu-build-base:1.0.0
 FROM ${BASE_IMAGE} AS base
 
 # -----------------------------------------------------------------------------
