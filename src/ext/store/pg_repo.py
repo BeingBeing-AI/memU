@@ -26,6 +26,7 @@ from ext.store.base_repo import BaseMemoryStore
 from memu.models import (
     CategoryItem,
     MemoryCategory,
+    MemoryCluster,
     MemoryItem,
     MemoryType,
     Resource,
@@ -89,6 +90,31 @@ class MemoryItemModel(Base):
     summary = Column(Text, nullable=False)
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
+    is_clustered = Column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        Index('idx_memory_items_user_deleted_clustered',
+              'user_id', 'is_deleted', 'is_clustered',
+              postgresql_where=(is_clustered == False) & (is_deleted == False)),
+    )
+
+
+class MemoryClusterModel(Base):
+    __tablename__ = "memory_clusters"
+
+    id = Column(String(255), primary_key=True)
+    user_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    name = Column(String(255), nullable=False)
+    summary = Column(Text, nullable=False)
+    embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=True)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        Index('idx_memory_clusters_user_name', 'user_id', 'name', postgresql_where=(is_deleted == False)),
+        Index('idx_memory_clusters_user_deleted', 'user_id', 'is_deleted', postgresql_where=(is_deleted == False)),
+    )
 
 
 class SharedEngine:
@@ -325,7 +351,8 @@ class PgStore(BaseMemoryStore):
         related_items = self.retrieve_memory_items(embedding, min_similarity=min_similarity)
         if related_items:
             removed_items_str = "\n".join([f"{item.memory_type} - {item.summary}" for item in related_items])
-            logger.info(f"Removing {len(related_items)} similar items, new summary: {summary}\nRemoved items: {removed_items_str}")
+            logger.info(
+                f"Removing {len(related_items)} similar items, new summary: {summary}\nRemoved items: {removed_items_str}")
         for related_item in related_items:
             self.remove_memory_item(related_item.id)
 
@@ -345,7 +372,6 @@ class PgStore(BaseMemoryStore):
             return False
         finally:
             session.close()
-
 
     def link_item_category(self, item_id: str, cat_id: str) -> CategoryItem:
         """链接记忆项和类别（验证item属于当前用户）"""
@@ -386,6 +412,186 @@ class PgStore(BaseMemoryStore):
                 session.commit()
 
             return CategoryItem(item_id=item_id, category_id=cat_id)
+        finally:
+            session.close()
+
+    def create_clusters(
+            self,
+            *,
+            clusters: List[dict]
+    ) -> List[MemoryCluster]:
+        """批量创建记忆集群（仅限当前用户）"""
+        session = self.session_local()
+        try:
+            # 生成所有集群的ID
+            cluster_data = []
+            for cluster in clusters:
+                cluster_id = str(uuid.uuid4())
+                cluster_data.append({
+                    "id": cluster_id,
+                    "user_id": self.user_id,
+                    "name": cluster["name"],
+                    "summary": cluster["summary"],
+                    "embedding": cluster["embedding"],
+                    "is_deleted": False,
+                })
+
+            # 批量插入
+            session.add_all([
+                MemoryClusterModel(
+                    id=data["id"],
+                    user_id=data["user_id"],
+                    name=data["name"],
+                    summary=data["summary"],
+                    embedding=data["embedding"],
+                    is_deleted=data["is_deleted"],
+                ) for data in cluster_data
+            ])
+            session.commit()
+
+            # 返回创建的MemoryCluster对象列表
+            created_clusters = []
+            for data in cluster_data:
+                created_cluster = MemoryCluster(
+                    id=data["id"],
+                    user_id=data["user_id"],
+                    name=data["name"],
+                    summary=data["summary"],
+                    embedding=data["embedding"],
+                    is_deleted=data["is_deleted"],
+                )
+                created_clusters.append(created_cluster)
+
+            return created_clusters
+        finally:
+            session.close()
+
+    def get_all_clusters(self) -> List[MemoryCluster]:
+        """获取当前用户的所有记忆集群（未删除的）"""
+        session = self.session_local()
+        try:
+            results = session.query(MemoryClusterModel).filter(
+                MemoryClusterModel.user_id == self.user_id,
+                MemoryClusterModel.is_deleted == False
+            ).all()
+
+            clusters = []
+            for db_cluster in results:
+                cluster = MemoryCluster(
+                    id=db_cluster.id,
+                    user_id=db_cluster.user_id,
+                    name=db_cluster.name,
+                    summary=db_cluster.summary,
+                    embedding=db_cluster.embedding.tolist() if db_cluster.embedding is not None else [],
+                )
+                clusters.append(cluster)
+
+            return clusters
+        finally:
+            session.close()
+
+    def remove_all_clusters(self) -> bool:
+        pass
+
+    def update_clusters_and_mark_items(
+        self,
+        new_clusters: List[dict],
+        item_ids: List[str]
+    ) -> bool:
+        """
+        事务性地更新聚类信息：
+        1. 将原来的所有cluster设置为is_deleted=true
+        2. 插入新的cluster值
+        3. 将传入的MemoryItem的is_clustered=true
+
+        Args:
+            new_clusters: 新聚类的列表，每个元素包含name, summary, embedding
+            item_ids: 需要标记为已聚类的记忆项ID列表
+
+        Returns:
+            bool: 操作是否成功
+        """
+        session = self.session_local()
+        try:
+            # 开始事务
+            session.begin()
+
+            # 1. 将当前用户的所有cluster标记为已删除
+            session.query(MemoryClusterModel).filter(
+                MemoryClusterModel.user_id == self.user_id
+            ).update({"is_deleted": True})
+
+            # 2. 插入新的cluster
+            cluster_data = []
+            for cluster in new_clusters:
+                cluster_id = str(uuid.uuid4())
+                cluster_data.append({
+                    "id": cluster_id,
+                    "user_id": self.user_id,
+                    "name": cluster["name"],
+                    "summary": cluster["summary"],
+                    "embedding": cluster["embedding"],
+                    "is_deleted": False,
+                })
+
+            if cluster_data:
+                session.add_all([
+                    MemoryClusterModel(
+                        id=data["id"],
+                        user_id=data["user_id"],
+                        name=data["name"],
+                        summary=data["summary"],
+                        embedding=data["embedding"],
+                        is_deleted=data["is_deleted"],
+                    ) for data in cluster_data
+                ])
+
+            # 3. 将指定的记忆项标记为已聚类
+            if item_ids:
+                session.query(MemoryItemModel).filter(
+                    MemoryItemModel.id.in_(item_ids),
+                    MemoryItemModel.user_id == self.user_id,
+                    MemoryItemModel.is_deleted.is_(False)
+                ).update({"is_clustered": True})
+
+            # 提交事务
+            session.commit()
+            return True
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"更新聚类失败: {e}")
+            return False
+        finally:
+            session.close()
+
+    def retrieve_memory_clusters(
+            self, qvec: List[float], top_k: int = 5
+    ) -> List[MemoryCluster]:
+        session = self.session_local()
+        try:
+            # 使用pgvector的"<=>"操作符计算余弦距离，并按距离升序排列（最相似的在前）
+            results = session.query(MemoryClusterModel).filter(
+                MemoryClusterModel.user_id == self.user_id,
+                MemoryClusterModel.is_deleted == False
+            ).order_by(
+                MemoryClusterModel.embedding.cosine_distance(qvec)
+            ).limit(top_k).all()
+
+            # 将数据库模型转换为MemoryCluster对象
+            clusters = []
+            for db_cluster in results:
+                cluster = MemoryCluster(
+                    id=db_cluster.id,
+                    user_id=db_cluster.user_id,
+                    name=db_cluster.name,
+                    summary=db_cluster.summary,
+                    embedding=db_cluster.embedding.tolist() if db_cluster.embedding is not None else [],
+                    is_deleted=db_cluster.is_deleted,
+                )
+                clusters.append(cluster)
+
+            return clusters
         finally:
             session.close()
 
@@ -567,6 +773,38 @@ class PgStore(BaseMemoryStore):
                 embedding=result.embedding.tolist() if result.embedding is not None else [],
                 summary=str(result.summary) if result.summary is not None else None,
             )
+        finally:
+            session.close()
+
+    def get_unclustered_items(self) -> List[MemoryItem]:
+        """
+        获取当前用户所有未聚类的记忆项（is_clustered为False的项）
+
+        Returns:
+            List[MemoryItem]: 未聚类的记忆项列表
+        """
+        session = self.session_local()
+        try:
+            # 查询当前用户所有未聚类且未删除的记忆项
+            results = session.query(MemoryItemModel).filter(
+                MemoryItemModel.user_id == self.user_id,
+                MemoryItemModel.is_deleted.is_(False),
+                MemoryItemModel.is_clustered.is_(False)
+            ).all()
+
+            # 将数据库模型转换为MemoryItem对象
+            memory_items = []
+            for db_item in results:
+                item = MemoryItem(
+                    id=db_item.id,
+                    resource_id=db_item.resource_id,
+                    memory_type=db_item.memory_type,
+                    summary=db_item.summary,
+                    embedding=db_item.embedding.tolist() if db_item.embedding is not None else [],
+                )
+                memory_items.append(item)
+
+            return memory_items
         finally:
             session.close()
 

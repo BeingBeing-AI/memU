@@ -35,3 +35,11 @@ class MemoryCategory(BaseModel):
 class CategoryItem(BaseModel):
     item_id: str
     category_id: str
+
+
+class MemoryCluster(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    summary: str
+    embedding: list[float]
