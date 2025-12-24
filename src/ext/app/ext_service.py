@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from collections.abc import Sequence
 from typing import Any, List
 
@@ -32,7 +33,7 @@ from memu.llm.openai_sdk import OpenAISDKClient
 
 flash_llm_client = OpenAISDKClient(
     base_url="http://llm.ai-nebula.com/v1",
-    api_key="sk-i64nj7hr5z9rnpb00lyvhm",
+    api_key=os.getenv("NEBULA_API_KEY"),
     chat_model="gemini-3-flash-preview",
 )
 
