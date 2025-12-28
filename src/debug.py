@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 
 from ext.app.ext_service import ExtUserContext, ExtMemoryService
-from ext.prompts.summary_profile import PROMPT
+from ext.memory.cluster import cluster_memories
 
 load_dotenv()
 
@@ -83,6 +83,18 @@ async def test_retrieve():
     for item in result_rag.get('items', [])[:3]:
         print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
 
+async def test_memory_item_cluster(user_id: str):
+    user = DefaultUserModel(user_id=user_id)
+    ctx = memory_service._get_user_context(user)
+    all_items = ctx.store.get_all_items()
+    clusters = cluster_memories(all_items)
+    for label, c in clusters.items():
+        print(f"Cluster {label}: {len(c)} items")
+        for item in c:
+            print(f"  - [{item.memory_type}] {item.summary}")
+        print("---")
+
+
 async def test_custom_retrieve():
     query = "今天要去见新的投资人"
     # query = "把把胡今天生病了"
@@ -94,7 +106,8 @@ async def test_custom_retrieve():
 async def main():
     # await test_memorize("cobe")
     # await test_custom_retrieve()
-    await summary_categories("cobe")
+    # await summary_categories("cobe")
+    await test_memory_item_cluster("cobe")
 
 
 if __name__ == "__main__":

@@ -466,6 +466,29 @@ class PgStore(BaseMemoryStore):
         finally:
             session.close()
 
+    def get_all_items(self) -> List[MemoryItem]:
+        """获取当前用户所有记忆项（未删除的）"""
+        session = self.session_local()
+        try:
+            results = session.query(MemoryItemModel).filter(
+                MemoryItemModel.user_id == self.user_id,
+                MemoryItemModel.is_deleted == False
+            ).all()
+
+            items = []
+            for db_item in results:
+                item = MemoryItem(
+                    id=db_item.id,
+                    resource_id=db_item.resource_id,
+                    memory_type=db_item.memory_type,
+                    summary=db_item.summary,
+                    embedding=db_item.embedding.tolist() if db_item.embedding is not None else [],
+                )
+                items.append(item)
+            return items
+        finally:
+            session.close()
+
     def get_all_clusters(self) -> List[MemoryCluster]:
         """获取当前用户的所有记忆集群（未删除的）"""
         session = self.session_local()
