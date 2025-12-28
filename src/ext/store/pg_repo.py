@@ -1,28 +1,24 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from typing import List, Optional
 
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
-    create_engine,
-    Column,
-    String,
-    Text,
-    Table,
-    Engine,
-    Index,
-    DateTime,
     Boolean,
+    Column,
+    DateTime,
+    Index,
+    String,
+    Table,
+    Text,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.sql import func
 
 from ext.ext_models import ExtMemoryItem
 from ext.store.base_repo import BaseMemoryStore
+from ext.store.pg_session import shared_engine, Base
 from memu.models import (
     CategoryItem,
     MemoryCategory,
@@ -36,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 VECTOR_DIMENSION = 1024
 
-Base = declarative_base()
 
 category_items_table = Table(
     "category_items",
@@ -117,54 +112,6 @@ class MemoryClusterModel(Base):
     )
 
 
-class SharedEngine:
-    """全局共享的 engine 封装类"""
-
-    def __init__(self, connection_string: str):
-        self.engine, self.session = self.init_pg_engine(connection_string)
-
-    @staticmethod
-    def init_pg_engine(connection_string: str, echo: bool = False) -> tuple[Engine, sessionmaker[Session]]:
-        """
-        初始化全局共享的 PostgreSQL engine
-
-        Args:
-            connection_string: PostgreSQL连接字符串，格式如：
-                "postgresql://user:password@host:port/database"
-            echo: 是否打印SQL语句，默认为False
-
-        Returns:
-            Engine: SQLAlchemy engine 实例
-        """
-
-        engine = create_engine(
-            connection_string,
-            echo=echo,
-            pool_pre_ping=True,
-        )
-        session_local = sessionmaker(
-            autocommit=False, autoflush=False, bind=engine
-        )
-        # 创建数据库表
-        Base.metadata.create_all(bind=engine)
-
-        return engine, session_local
-
-    def dispose(self):
-        """关闭并清理 engine"""
-        self.engine.dispose()
-
-
-def _get_connection_string() -> str:
-    """Read connection string from PG_URL or fall back to local default."""
-    return os.getenv("PG_URL", "postgresql://root:dev123@localhost:5432/starfy")
-
-
-# 全局共享的 engine 实例
-_shared_engine: Optional[SharedEngine] = SharedEngine(
-    connection_string=_get_connection_string())
-
-
 class PgMemoryCategory(MemoryCategory):
     """PgStore 专用的 MemoryCategory 子类，支持自动更新数据库"""
     _store: Optional["PgStore"] = None
@@ -182,8 +129,8 @@ class PgStore(BaseMemoryStore):
         初始化PostgreSQL存储（使用pgvector）
         """
         self.user_id = user_id
-        self.engine = _shared_engine.engine
-        self.session_local = _shared_engine.session
+        self.engine = shared_engine.engine
+        self.session_local = shared_engine.session
         self.categories = CategoriesAccessor(self)
 
     def update_resource_status(self, resource_url: str, status: str) -> bool:
@@ -517,9 +464,9 @@ class PgStore(BaseMemoryStore):
         pass
 
     def update_clusters_and_mark_items(
-        self,
-        new_clusters: List[dict],
-        item_ids: List[str]
+            self,
+            new_clusters: List[dict],
+            item_ids: List[str]
     ) -> bool:
         """
         事务性地更新聚类信息：

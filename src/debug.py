@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from ext.app.ext_service import ExtUserContext, ExtMemoryService
 from ext.memory.cluster import cluster_memories
+from ext.store.pg_ext_repo import ExtStore
 
 load_dotenv()
 
@@ -52,11 +53,15 @@ def init_memory_service():
 
     return memory_service
 
+
 memory_service = init_memory_service()
+pg_ext_store = ExtStore()
+
 
 async def test_memorize(user_id):
     user = DefaultUserModel(user_id=user_id)
-    memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id, categories_ready=False)
+    memory_service._contexts[f"DefaultUserModel:{user.user_id}"] = ExtUserContext(user_id=user.user_id,
+                                                                                  categories_ready=False)
     # Memorize
     for i in range(0, 2):
         file_path = os.path.abspath(f"../data/{user_id}/session_{i}.json")
@@ -83,6 +88,7 @@ async def test_retrieve():
     for item in result_rag.get('items', [])[:3]:
         print(f"  - [{item.get('memory_type')}] {item.get('summary', '')[:100]}...")
 
+
 async def test_memory_item_cluster(user_id: str):
     user = DefaultUserModel(user_id=user_id)
     ctx = memory_service._get_user_context(user)
@@ -95,6 +101,16 @@ async def test_memory_item_cluster(user_id: str):
         print("---")
 
 
+async def test_memory_activity_item_cluster(user_id: int):
+    all_items = pg_ext_store.get_all_activity_items(user_id=user_id)
+    clusters = cluster_memories(all_items)
+    for label, c in clusters.items():
+        print(f"Cluster {label}: {len(c)} items")
+        for item in c:
+            print(f"  - {item.content}")
+        print("---")
+
+
 async def test_custom_retrieve():
     query = "今天要去见新的投资人"
     # query = "把把胡今天生病了"
@@ -103,13 +119,17 @@ async def test_custom_retrieve():
     for r in result:
         print(f"  - [{r.memory_type}] {r.summary}")
 
+
 async def main():
     # await test_memorize("cobe")
     # await test_custom_retrieve()
     # await summary_categories("cobe")
-    await test_memory_item_cluster("cobe")
+    # await test_memory_item_cluster("cobe")
+    # await test_memory_item_cluster("cobe")
+    await test_memory_activity_item_cluster(4690)
 
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(main())

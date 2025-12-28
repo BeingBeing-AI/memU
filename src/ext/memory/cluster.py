@@ -4,14 +4,14 @@ from collections import defaultdict
 from typing import List, Dict
 from sklearn.preprocessing import normalize
 
-from memu.models import MemoryItem
+from memu.models import MemoryItem, MemoryActivityItem
 
 
 def cluster_memories(
-    memories: List[MemoryItem],
+    memories: List[MemoryItem | MemoryActivityItem],
     min_cluster_size: int = 2,
     min_samples: int | None = None,
-) -> Dict[int, List[MemoryItem]]:
+) -> Dict[int, List[MemoryItem | MemoryActivityItem]]:
     """
     使用 HDBSCAN 对 memory embeddings 进行聚类
 
@@ -22,7 +22,7 @@ def cluster_memories(
     if not memories:
         return {}
 
-    embeddings = np.vstack([m.embedding for m in memories])
+    embeddings = np.vstack([m.embedding for m in memories if m.embedding is not None])
     embeddings = normalize(embeddings, norm="l2")
 
     clusterer = hdbscan.HDBSCAN(
