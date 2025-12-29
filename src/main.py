@@ -51,9 +51,9 @@ def init_memory_service():
     memory_service = ExtMemoryService(
         llm_config={
             "client_backend": "sdk",
-            "base_url": "",
-            "api_key": "",
-            "chat_model": "",
+            "base_url": os.getenv("OPENAI_BASE_URL"),
+            "api_key": os.getenv("OPENAI_API_KEY"),
+            "chat_model": os.getenv("OPENAI_MODEL_NAME"),
         },
         embedding_config={
             "client_backend": "sdk",
@@ -61,24 +61,10 @@ def init_memory_service():
             "api_key": os.getenv("QWEN_API_KEY"),
             "embed_model": "text-embedding-v4",
         },
-        # embedding_config={
-        #     "client_backend": "sdk",
-        #     "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-        #     "api_key": os.getenv("ARK_API_KEY"),
-        #     "embed_model": "doubao-embedding-text-240715",
-        #     "provider": "doubao"
-        # },
         memorize_config={
             "category_summary_target_length": 300
         },
         retrieve_config={"method": "rag"}
-    )
-
-    memory_service.llm_client = OpenAIAzureSDKClient(
-        azure_endpoint="https://gpt-5-10.openai.azure.com",
-        api_key=os.getenv("GPT_API_KEY"),
-        api_version="2025-01-01-preview",
-        chat_model=os.getenv("OPENAI_MODEL_NAME", "gpt-5.1-chat"),
     )
 
     return memory_service
