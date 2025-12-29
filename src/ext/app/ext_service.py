@@ -1,6 +1,8 @@
+import asyncio
 import json
 import logging
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
 
 from pydantic import BaseModel
@@ -114,7 +116,16 @@ class ExtMemoryService(MemoryService):
         ctx = self._get_user_context(user)
         if retrieve_type == "light":
             qvec = (await self.embedding_client.embed([query]))[0]
-            return ctx.store.retrieve_memory_items(qvec, top_k=top_k, min_similarity=min_similarity)
+
+            # 使用线程池执行同步数据库操作
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                result = await loop.run_in_executor(
+                    executor,
+                    ctx.store.retrieve_memory_items,
+                    qvec, top_k, min_similarity
+                )
+            return result
 
         # 基于LLM+RAG的检索
         # Step 1: Decide if retrieval is needed
@@ -129,7 +140,16 @@ class ExtMemoryService(MemoryService):
             return []
 
         qvec = (await self.embedding_client.embed([rewritten_query]))[0]
-        return ctx.store.retrieve_memory_items(qvec, top_k=top_k, min_similarity=min_similarity)
+
+        # 使用线程池执行同步数据库操作
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(
+                executor,
+                ctx.store.retrieve_memory_items,
+                qvec, top_k, min_similarity
+            )
+        return result
 
     def _parse_structured_entries(
         self, memory_types: list[MemoryType], responses: Sequence[str]
