@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, Any
 
@@ -19,6 +20,30 @@ from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 
+
+def configure_logging() -> None:
+    """Configure logging to emit both to stdout and a rotating file for log collection."""
+    log_dir = Path(os.getenv("MEMU_LOG_DIR", "/var/log/memu"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = log_dir / os.getenv("MEMU_LOG_FILENAME", "app.log")
+    log_level_name = os.getenv("MEMU_LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_name, logging.INFO)
+
+    handlers: list[logging.Handler] = [
+        logging.StreamHandler(),
+        RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5),
+    ]
+
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+
+
+configure_logging()
 logger = logging.getLogger(__file__)
 
 

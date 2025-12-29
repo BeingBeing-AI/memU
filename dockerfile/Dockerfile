@@ -38,6 +38,12 @@ RUN set -eux; \
 # -----------------------------------------------------------------------------
 FROM deps AS runtime
 
+ENV MEMU_LOG_DIR=/var/log/memu \
+    MEMU_LOG_FILENAME=app.log \
+    MEMU_LOG_LEVEL=INFO
+
+RUN mkdir -p "${MEMU_LOG_DIR}"
+
 # Copy the rest of the application (invalidates only when sources change)
 COPY . .
 
