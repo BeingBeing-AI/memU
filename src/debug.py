@@ -6,7 +6,10 @@ from dotenv import load_dotenv
 
 from ext.app.ext_service import ExtUserContext, ExtMemoryService
 from ext.memory.cluster import cluster_memories
-from ext.store.pg_ext_repo import ExtStore
+
+from ext.memory.condensation import condensation_activity_items
+from ext.store.activity_item_store import get_all_activity_items
+from memu.llm.openai_sdk import OpenAISDKClient
 
 load_dotenv()
 
@@ -15,6 +18,12 @@ from memu.app import DefaultUserModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__file__)
+
+flash_llm_client = OpenAISDKClient(
+    base_url="http://llm.ai-nebula.com/v1",
+    api_key=os.getenv("NEBULA_API_KEY"),
+    chat_model="gemini-3-flash-preview",
+)
 
 
 def init_memory_service():
@@ -55,7 +64,6 @@ def init_memory_service():
 
 
 memory_service = init_memory_service()
-pg_ext_store = ExtStore()
 
 
 async def test_memorize(user_id):
@@ -102,13 +110,14 @@ async def test_memory_item_cluster(user_id: str):
 
 
 async def test_memory_activity_item_cluster(user_id: int):
-    all_items = pg_ext_store.get_all_activity_items(user_id=user_id)
+    all_items = get_all_activity_items(user_id=user_id)
     clusters = cluster_memories(all_items)
-    for label, c in clusters.items():
-        print(f"Cluster {label}: {len(c)} items")
-        for item in c:
-            print(f"  - {item.content}")
-        print("---")
+    # for label, c in clusters.items():
+    # print(f"Cluster {label}: {len(c)} items")
+    # for item in c:
+    #     print(f"  - {item.content}")
+    # print("---")
+    return clusters
 
 
 async def test_custom_retrieve():
@@ -126,7 +135,16 @@ async def main():
     # await summary_categories("cobe")
     # await test_memory_item_cluster("cobe")
     # await test_memory_item_cluster("cobe")
-    await test_memory_activity_item_cluster(4690)
+    cluster = await test_memory_activity_item_cluster(4690)
+    for label, c in cluster.items():
+        print(f"Cluster {label}: {len(c)} items")
+        for item in c:
+            print(f"  - {item.content}")
+        print("---")
+        if label == -1:
+            continue
+        result = await condensation_activity_items(flash_llm_client, c)
+        print(f"Comdensation: \n {result} \n")
 
 
 if __name__ == "__main__":

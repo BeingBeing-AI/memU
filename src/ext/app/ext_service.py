@@ -7,7 +7,7 @@ from typing import Any, List
 from pydantic import BaseModel
 
 from ext.ext_models import ExtMemoryItem, ConversationMessage
-from ext.prompts.cluster import CLUSTER_PROMPT
+from ext.memory.cluster import CLUSTER_PROMPT
 from ext.prompts.summary_profile import PROMPT
 from ext.store.pg_repo import PgStore, MemoryResourceModel
 from memu.app import MemoryService
@@ -27,15 +27,6 @@ class ExtUserContext(_UserContext):
         super().__init__(categories_ready=categories_ready)
         self.user_id = user_id
         self.store = PgStore(user_id=user_id)
-
-
-from memu.llm.openai_sdk import OpenAISDKClient
-
-flash_llm_client = OpenAISDKClient(
-    base_url="http://llm.ai-nebula.com/v1",
-    api_key=os.getenv("NEBULA_API_KEY"),
-    chat_model="gemini-3-flash-preview",
-)
 
 
 class ExtMemoryService(MemoryService):
@@ -118,7 +109,7 @@ class ExtMemoryService(MemoryService):
         user_prompt = f"""现有记忆内容：{json.dumps(formated_cluster, indent=2)}
 新记忆项目: {formated_items}
 """
-        response = await flash_llm_client.summarize(system_prompt=CLUSTER_PROMPT, text=user_prompt)
+        response = await self.llm_client.summarize(system_prompt=CLUSTER_PROMPT, text=user_prompt)
         logger.info(f"Cluster response: {response}")
         if response and len(response) > 10:
             try:

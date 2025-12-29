@@ -24,6 +24,9 @@ class MemoryItem(BaseModel):
     summary: str
     embedding: list[float]
 
+    def get_content(self) -> str:
+        return self.summary
+
 
 class MemoryActivityItem(BaseModel):
     id: int
@@ -65,3 +68,6 @@ class MemoryActivityItem(BaseModel):
     embedding: list[float] | None = None
     clustered: bool | None = None
     similarity_score: float | None = None
+
+    def get_content(self) -> str:
+        return self.content
