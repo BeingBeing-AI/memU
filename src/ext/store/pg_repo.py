@@ -90,6 +90,12 @@ class MemoryItemModel(Base):
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
 
+    # 为user_id添加索引，优化过滤性能
+    __table_args__ = (
+        Index('idx_memory_items_user_id', 'user_id'),
+        Index('idx_memory_items_user_deleted', 'user_id', 'is_deleted'),
+    )
+
 
 class SharedEngine:
     """全局共享的 engine 封装类"""

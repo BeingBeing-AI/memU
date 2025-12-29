@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, Any
@@ -164,6 +165,7 @@ async def retrieve(payload: Dict[str, Any]):
 
 @app.post("/api/v1/memory/retrieve/related-memory-items")
 async def retrieve_items_by_queries(request: MultiRetrieveRequest):
+    start_time = time.time()
     logger.info(f"retrieve_items_by_queries, request: {request}")
     if not request.queries:
         if not request.query:
@@ -217,6 +219,11 @@ async def retrieve_items_by_queries(request: MultiRetrieveRequest):
         "total_found": len(related_memories),
         "related_memories": related_memories,
     }
+
+    # 计算耗时
+    elapsed_time = time.time() - start_time
+    logger.info(f"retrieve_items_by_queries completed, elapsed_time: {elapsed_time:.4f}s, response: {resp}")
+
     return JSONResponse(content=resp)
 
 
