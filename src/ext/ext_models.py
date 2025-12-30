@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 from memu.models import MemoryItem
 
-
 class NonStrictBaseModel(BaseModel):
     # Allow coercion instead of strict type enforcement for external-facing requests.
     model_config = ConfigDict(strict=False)
@@ -48,4 +47,3 @@ class MultiRetrieveRequest(NonStrictBaseModel):
     query: str | None = None
     top_k: int = 10
     min_similarity: float = 0.3
-    retrieve_type: str = "light"

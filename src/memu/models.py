@@ -61,9 +61,9 @@ class MemoryActivityItem(BaseModel):
     conversation_id: str
     session_id: str | None = None
     content: str | None = None
-    mentioned_at: date | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    mentioned_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
     search_content: str | None = None
     embedding: list[float] | None = None
     clustered: bool | None = None

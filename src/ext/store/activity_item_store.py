@@ -61,3 +61,51 @@ def get_all_activity_items(user_id: int) -> List[MemoryActivityItem]:
         return activity_items
     finally:
         session.close()
+
+
+def retrieve_activity_items(
+    user_id: int,
+    qvec: List[float],
+    top_k: int = 10,
+    min_similarity: float = 0.3,
+    include_embedding: bool = False,
+) -> List[MemoryActivityItem]:
+    """基于向量相似度检索当前用户的记忆活动项"""
+    session = shared_engine.session()
+    try:
+        similarity = 1 - MemoryActivityItemModel.embedding.cosine_distance(qvec)
+        query = (
+            session.query(
+                MemoryActivityItemModel,
+                similarity.label("similarity_score"),
+            )
+            .filter(
+                MemoryActivityItemModel.user_id == user_id,
+                similarity >= min_similarity,
+            )
+            .order_by(MemoryActivityItemModel.embedding.cosine_distance(qvec))
+        )
+
+        results = query.limit(top_k).all()
+
+        activity_items: List[MemoryActivityItem] = []
+        for db_item, similarity_score in results:
+            activity_items.append(
+                MemoryActivityItem(
+                    id=db_item.id,
+                    user_id=db_item.user_id,
+                    conversation_id=db_item.conversation_id,
+                    session_id=db_item.session_id,
+                    content=db_item.content,
+                    mentioned_at=str(db_item.mentioned_at),
+                    created_at=str(db_item.created_at),
+                    updated_at=str(db_item.updated_at),
+                    search_content=db_item.search_content,
+                    embedding=db_item.embedding.tolist() if include_embedding and db_item.embedding is not None else None,
+                    clustered=db_item.clustered,
+                    similarity_score=similarity_score,
+                )
+            )
+        return activity_items
+    finally:
+        session.close()

@@ -9,10 +9,10 @@ from typing import Dict, Any
 
 from dotenv import load_dotenv
 
-from debug import memory_service
 from ext.app.ext_service import ExtMemoryService
 from ext.ext_models import MemorizeRequest, RetrieveRequest, MultiRetrieveRequest, WeightedQuery
-from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
+from ext.store.activity_item_store import retrieve_activity_items
+from ext.store.memory_item_store import retrieve_memory_items
 from memu.app import DefaultUserModel
 
 load_dotenv()
@@ -173,7 +173,7 @@ async def retrieve(payload: Dict[str, Any]):
 
 
 @app.post("/api/v1/memory/retrieve/related-memory-items")
-async def retrieve_items_by_queries(request: MultiRetrieveRequest):
+async def retrieve_related_memory_items(request: MultiRetrieveRequest):
     start_time = time.time()
     logger.info(f"retrieve_items_by_queries, request: {request}")
     if not request.queries:
@@ -235,6 +235,63 @@ async def retrieve_items_by_queries(request: MultiRetrieveRequest):
 
     return JSONResponse(content=resp)
 
+
+@app.post("/api/v1/memory/retrieve/items")
+async def retrieve_related_items(request: MultiRetrieveRequest):
+    start_time = time.time()
+    logger.info(f"retrieve_related_items, request: {request}")
+    if not request.queries:
+        if not request.query:
+            raise HTTPException(status_code=400, detail="`query` must not be empty")
+        request.queries = [WeightedQuery(query=request.query, weight=1.0)]
+
+    async def fetch_results(qvec, query_source: str = "memory_item"):
+        if query_source == "activity":
+            items = await asyncio.to_thread(
+                retrieve_activity_items,
+                int(request.user_id),
+                qvec,
+                request.top_k,
+                request.min_similarity,
+            )
+            return "activity", items
+
+        items = await asyncio.to_thread(
+            retrieve_memory_items,
+            request.user_id,
+            qvec,
+            request.top_k,
+            request.min_similarity,
+        )
+        return "memory_item", items
+
+    qvecs = await memory_service.embedding_client.embed([q.query for q in request.queries])
+
+    tasks = [
+        fetch_results(q, source)
+        for q in qvecs
+        for source in ("memory_item", "activity")
+    ]
+    query_results = await asyncio.gather(*tasks)
+
+    memory_items = []
+    activity_items = []
+    for query_source, items in query_results:
+        if query_source == "activity":
+            activity_items.extend(items)
+        else:
+            memory_items.extend(items)
+
+    resp = {
+        "memory_items": [item.model_dump() for item in memory_items],
+        "activity_items": [item.model_dump() for item in activity_items],
+    }
+
+    # 计算耗时
+    elapsed_time = time.time() - start_time
+    logger.info(f"retrieve_items_by_queries completed, elapsed_time: {elapsed_time:.4f}s, response: {resp}")
+
+    return JSONResponse(content=resp)
 
 @app.get("/health")
 async def health():
