@@ -274,17 +274,40 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
     ]
     query_results = await asyncio.gather(*tasks)
 
-    memory_items = []
-    activity_items = []
-    for query_source, items in query_results:
-        if query_source == "activity":
-            activity_items.extend(items)
-        else:
-            memory_items.extend(items)
+    # 按照queries中的weight值对每个结果的相似度分数进行加权
+    weighted_memory_items = []
+    weighted_activity_items = []
+
+    # 将query_results与对应的weight关联
+    for i, (query_source, items) in enumerate(query_results):
+        # 计算这个结果对应的query索引
+        # 每个query会产生两个source的结果(memory_item和activity)，所以索引要除以2
+        query_index = i // 2
+        query = request.queries[query_index]
+        weight = query.weight
+
+        # 为每个item添加weight信息
+        for item in items:
+            item_dict = item.model_dump()
+            item_dict['weighted_similarity'] = item.similarity_score * weight
+            item_dict['query_weight'] = weight
+
+            if query_source == "activity":
+                weighted_activity_items.append(item_dict)
+            else:
+                weighted_memory_items.append(item_dict)
+
+    # 按加权相似度排序并取top_k
+    weighted_memory_items.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+    weighted_activity_items.sort(key=lambda x: x['weighted_similarity'], reverse=True)
+
+    top_k = request.top_k
+    memory_items_topk = weighted_memory_items[:top_k]
+    activity_items_topk = weighted_activity_items[:top_k]
 
     resp = {
-        "memory_items": [item.model_dump() for item in memory_items],
-        "activity_items": [item.model_dump() for item in activity_items],
+        "memory_items": memory_items_topk,
+        "activity_items": activity_items_topk,
     }
 
     # 计算耗时
