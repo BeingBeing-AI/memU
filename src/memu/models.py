@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -23,6 +24,15 @@ class MemoryItem(BaseModel):
     summary: str
     embedding: list[float]
 
+    def get_content(self) -> str:
+        return self.summary
+
+
+class MemoryActivityItem(BaseModel):
+    id: int
+    content: str
+    embedding: list[float]
+
 
 class MemoryCategory(BaseModel):
     id: str
@@ -35,3 +45,29 @@ class MemoryCategory(BaseModel):
 class CategoryItem(BaseModel):
     item_id: str
     category_id: str
+
+
+class MemoryCluster(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    summary: str
+    embedding: list[float]
+
+
+class MemoryActivityItem(BaseModel):
+    id: int
+    user_id: int
+    conversation_id: str
+    session_id: str | None = None
+    content: str | None = None
+    mentioned_at: date | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    search_content: str | None = None
+    embedding: list[float] | None = None
+    clustered: bool | None = None
+    similarity_score: float | None = None
+
+    def get_content(self) -> str:
+        return self.content

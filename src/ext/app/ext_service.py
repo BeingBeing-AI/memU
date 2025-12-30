@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
@@ -8,6 +9,7 @@ from typing import Any, List
 from pydantic import BaseModel
 
 from ext.ext_models import ExtMemoryItem, ConversationMessage
+from ext.memory.cluster import CLUSTER_PROMPT
 from ext.prompts.summary_profile import PROMPT
 from ext.store.pg_repo import PgStore, MemoryResourceModel
 from memu.app import MemoryService
@@ -16,6 +18,8 @@ from memu.embedding import HTTPEmbeddingClient
 from memu.models import MemoryType
 
 logger = logging.getLogger(__file__)
+
+USER_PROFILE_CAT_NAME = "user_profile"
 
 
 class ExtUserContext(_UserContext):
@@ -67,13 +71,13 @@ class ExtMemoryService(MemoryService):
     def on_memorize_done(self, user: BaseModel | None, resource_url: str):
         self._get_user_context(user).store.update_resource_status(resource_url, "success")
 
-    async def summary_user_profile(self, user: BaseModel | None):
+    async def summary_user_profile(self, user: BaseModel | None) -> str | None:
         ctx = self._get_user_context(user)
         categories = ctx.store.get_all_categories()
-        valid_categories = [cat for cat in categories if cat.summary]
+        valid_categories = [cat for cat in categories if cat.summary and cat.name != USER_PROFILE_CAT_NAME]
         if not valid_categories:
             logger.info(f"No categories to summarize for user {user.user_id}")
-            return
+            return None
         formated = [
             {
                 "name": cat.name,
@@ -87,6 +91,55 @@ class ExtMemoryService(MemoryService):
         cat = ctx.store.get_or_create_category(name="user_profile", description="summary of user profile",
                                                embedding=None)
         cat.summary = response
+        return response
+
+    async def clustering(self, user: BaseModel | None):
+        ctx = self._get_user_context(user)
+        exist_clusters = ctx.store.get_all_clusters()
+        formated_cluster = [
+            {
+                "name": cat.name,
+                "summary": cat.summary,
+            }
+            for cat in exist_clusters
+        ]
+
+        items = ctx.store.get_unclustered_items()
+        filter_items = [item for item in items if item.memory_type != "knowledge"]
+        formated_items = "\n".join([item.summary for item in filter_items])
+
+        user_prompt = f"""现有记忆内容：{json.dumps(formated_cluster, indent=2)}
+新记忆项目: {formated_items}
+"""
+        response = await self.llm_client.summarize(system_prompt=CLUSTER_PROMPT, text=user_prompt)
+        logger.info(f"Cluster response: {response}")
+        if response and len(response) > 10:
+            try:
+                cluster_data = json.loads(response)
+                if isinstance(cluster_data, list):
+                    # 提取新聚类数据
+                    new_clusters = []
+                    for cluster in cluster_data:
+                        if isinstance(cluster, dict) and "name" in cluster and "summary" in cluster:
+                            new_clusters.append({
+                                "name": cluster["name"],
+                                "summary": cluster["summary"],
+                                "embedding": None  # TODO: 这里需要生成embedding，暂时为空
+                            })
+
+                    # 提取未聚类的记忆项ID
+                    item_ids = [item.id for item in filter_items]
+
+                    # 调用新的事务方法更新聚类
+                    if new_clusters and item_ids:
+                        success = ctx.store.update_clusters_and_mark_items(new_clusters, item_ids)
+                        if success:
+                            logger.info(f"成功更新 {len(new_clusters)} 个聚类，标记 {len(item_ids)} 个记忆项为已聚类")
+                        else:
+                            logger.error("更新聚类失败")
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse cluster response: {e}")
         return response
 
     def get_all_category_summaries(self, user: BaseModel | None):
@@ -152,7 +205,7 @@ class ExtMemoryService(MemoryService):
         return result
 
     def _parse_structured_entries(
-        self, memory_types: list[MemoryType], responses: Sequence[str]
+            self, memory_types: list[MemoryType], responses: Sequence[str]
     ) -> list[tuple[MemoryType, str, list[str]]]:
         entries: list[tuple[MemoryType, str, list[str]]] = []
         for mtype, response in zip(memory_types, responses, strict=True):

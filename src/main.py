@@ -148,6 +148,15 @@ async def summary_user_profile(user_id: str):
     return JSONResponse(content={"status": "SUCCESS", "result": resp})
 
 
+@app.post("/api/v1/memory/clustering")
+async def clustering(user_id: str):
+    logger.info(f"clustering, user_id: {user_id}")
+    user = DefaultUserModel(user_id=user_id)
+    resp = await memory_service.clustering(user=user)
+    return JSONResponse(content={"status": "SUCCESS", "result": resp})
+
+
+
 @app.post("/api/v1/memory/retrieve-category-summary")
 async def retrieve_category_summary(request: RetrieveRequest):
     user = DefaultUserModel(user_id=request.user_id)
