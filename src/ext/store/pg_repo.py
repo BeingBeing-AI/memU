@@ -85,15 +85,7 @@ class MemoryItemModel(Base):
     summary = Column(Text, nullable=False)
     embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=False)
     is_deleted = Column(Boolean, default=False, nullable=False)
-    is_clustered = Column(Boolean, default=False, nullable=False)
 
-    __table_args__ = (
-        Index('idx_memory_items_user_deleted_clustered',
-              'user_id', 'is_deleted', 'is_clustered',
-              postgresql_where=(is_clustered == False) & (is_deleted == False)),
-    )
-
-    # 为user_id添加索引，优化过滤性能
     __table_args__ = (
         Index('idx_memory_items_user_id', 'user_id'),
         Index('idx_memory_items_user_deleted', 'user_id', 'is_deleted'),
