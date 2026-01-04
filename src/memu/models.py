@@ -20,6 +20,7 @@ class Resource(BaseModel):
 class MemoryItem(BaseModel):
     id: str
     resource_id: str
+    created_at: datetime | None
     memory_type: MemoryType
     summary: str
     embedding: list[float]

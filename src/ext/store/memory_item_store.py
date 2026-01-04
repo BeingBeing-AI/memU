@@ -20,6 +20,7 @@ def get_all_memory_items(user_id: str, include_embedding: bool = False) -> List[
             item = MemoryItem(
                 id=db_item.id,
                 resource_id=db_item.resource_id,
+                created_at=db_item.created_at,
                 memory_type=db_item.memory_type,
                 summary=db_item.summary,
                 embedding=db_item.embedding.tolist() if include_embedding and db_item.embedding is not None else [],

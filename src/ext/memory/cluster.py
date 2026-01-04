@@ -81,7 +81,7 @@ def cluster_memories(
 
     labels = clusterer.fit_predict(embeddings)
 
-    clusters: Dict[int, List[MemoryItem]] = defaultdict(list)
+    clusters: Dict[int, List] = defaultdict(list)
     for memory, label in zip(memories, labels):
         clusters[label].append(memory)
 

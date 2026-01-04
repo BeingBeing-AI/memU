@@ -4,23 +4,23 @@ import os
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from ext.app.ext_service import ExtUserContext, ExtMemoryService
 from ext.memory.cluster import cluster_memories
 
-from ext.memory.condensation import condensation_activity_items
+from ext.memory.condensation import condensation_activity_items, condensation_memory_items
 from ext.store.activity_item_store import get_all_activity_items
+from ext.store.memory_item_store import get_all_memory_items
 from memu.llm.openai_sdk import OpenAISDKClient
 
-load_dotenv()
-
-from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
 from memu.app import DefaultUserModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__file__)
 
 flash_llm_client = OpenAISDKClient(
-    base_url="http://llm.ai-nebula.com/v1",
+    base_url="https://gemini-965808384446.asia-east1.run.app/v1beta/openai",
     api_key=os.getenv("NEBULA_API_KEY"),
     chat_model="gemini-3-flash-preview",
 )
@@ -30,9 +30,9 @@ def init_memory_service():
     memory_service = ExtMemoryService(
         llm_config={
             "client_backend": "sdk",
-            "base_url": "",
-            "api_key": "",
-            "chat_model": "",
+            "base_url": os.getenv("OPENAI_BASE_URL"),
+            "api_key": os.getenv("OPENAI_API_KEY"),
+            "chat_model": os.getenv("OPENAI_MODEL_NAME"),
         },
         embedding_config={
             "client_backend": "sdk",
@@ -40,24 +40,10 @@ def init_memory_service():
             "api_key": os.getenv("QWEN_API_KEY"),
             "embed_model": "text-embedding-v4",
         },
-        # embedding_config={
-        #     "client_backend": "sdk",
-        #     "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-        #     "api_key": os.getenv("ARK_API_KEY"),
-        #     "embed_model": "doubao-embedding-text-240715",
-        #     "provider": "doubao"
-        # },
         memorize_config={
             "category_summary_target_length": 300
         },
         retrieve_config={"method": "rag"}
-    )
-
-    memory_service.llm_client = OpenAIAzureSDKClient(
-        azure_endpoint="https://gpt-5-10.openai.azure.com",
-        api_key=os.getenv("GPT_API_KEY"),
-        api_version="2025-01-01-preview",
-        chat_model="gpt-5.1",
     )
 
     return memory_service
@@ -105,8 +91,12 @@ async def test_memory_item_cluster(user_id: str):
     for label, c in clusters.items():
         print(f"Cluster {label}: {len(c)} items")
         for item in c:
-            print(f"  - [{item.memory_type}] {item.summary}")
+            print(f"  - {item.content}")
         print("---")
+        if label == -1:
+            continue
+        result = await condensation_activity_items(flash_llm_client, c)
+        print(f"Condensation: \n {result} \n")
 
 
 async def test_memory_activity_item_cluster(user_id: int):
@@ -120,6 +110,29 @@ async def test_memory_activity_item_cluster(user_id: int):
     return clusters
 
 
+async def test_condensation_memory_items(user_id):
+    memory_items = get_all_memory_items(user_id, include_embedding=True)
+    clusters = cluster_memories(memory_items)
+    results = []
+    for label, c in clusters.items():
+        print(f"Cluster {label}: {len(c)} items")
+        for item in c:
+            print(f"  - {item.get_content()}")
+        print("---")
+        if label == -1:
+            continue
+        # result = await condensation_memory_items(memory_service.llm_client, memory_items)
+        raw_items, result = await condensation_memory_items(flash_llm_client, c)
+        print(f"Condensation: \n {result} \n")
+        results.append({
+            "items": raw_items,
+            "result": result
+        })
+        break
+    with open("condensation_results.json", "w") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+
+
 async def test_custom_retrieve():
     query = "今天要去见新的投资人"
     # query = "把把胡今天生病了"
@@ -130,21 +143,8 @@ async def test_custom_retrieve():
 
 
 async def main():
-    # await test_memorize("cobe")
-    # await test_custom_retrieve()
-    # await summary_categories("cobe")
-    # await test_memory_item_cluster("cobe")
-    # await test_memory_item_cluster("cobe")
-    cluster = await test_memory_activity_item_cluster(4690)
-    for label, c in cluster.items():
-        print(f"Cluster {label}: {len(c)} items")
-        for item in c:
-            print(f"  - {item.content}")
-        print("---")
-        if label == -1:
-            continue
-        result = await condensation_activity_items(flash_llm_client, c)
-        print(f"Comdensation: \n {result} \n")
+    await test_condensation_memory_items("cobe")
+    # await memory_service.llm_client.summarize(text="hello")
 
 
 if __name__ == "__main__":
