@@ -1,3 +1,4 @@
+import uuid
 from typing import List
 
 from memu.llm.openai_sdk import OpenAISDKClient
@@ -31,6 +32,8 @@ CONDENSATION_PROMPT = """
 ## Input
 {items}
 """
+
+
 # - 不仅总结用户的内容，Starfy的内容也需要处理
 
 async def condensation_memory_items(llm_client: OpenAISDKClient, items: List[MemoryItem]) -> tuple[str, str]:
@@ -47,6 +50,7 @@ async def condensation_memory_items(llm_client: OpenAISDKClient, items: List[Mem
     sp = CONDENSATION_PROMPT.format(items=raw_items)
     return raw_items, await llm_client.summarize(text=sp)
 
+
 async def condensation_activity_items(llm_client: OpenAISDKClient, items: List[MemoryActivityItem]) -> str:
     raw_items = ""
     for item in items:
@@ -60,3 +64,26 @@ async def condensation_activity_items(llm_client: OpenAISDKClient, items: List[M
 
     sp = CONDENSATION_PROMPT.format(items=raw_items)
     return await llm_client.summarize(text=sp)
+
+
+def parse_condensation_result(original_items: List[MemoryItem], result: str) -> List[MemoryItem]:
+    if not result or not result.strip():
+        return []
+    sp = result.split("\n")
+    max_created_at = max(item.created_at for item in original_items if item.created_at)
+    new_items = []
+    for r in sp:
+        strip = r.strip()
+        if not strip:
+            continue
+        new_item = MemoryItem(
+            id = str(uuid.uuid4()),
+            created_at=max_created_at,
+            # TODO 合并后的memory_type等
+            resource_id=original_items[0].resource_id,
+            memory_type=original_items[0].memory_type,
+            summary=strip,
+            embedding=None
+        )
+        new_items.append(new_item)
+    return new_items

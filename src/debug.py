@@ -125,10 +125,11 @@ async def test_condensation_memory_items(user_id):
         raw_items, result = await condensation_memory_items(flash_llm_client, c)
         print(f"Condensation: \n {result} \n")
         results.append({
+            "item_count": len(raw_items.split("\n")),
             "items": raw_items,
+            "result_count": len(result.split("\n")),
             "result": result
         })
-        break
     with open("condensation_results.json", "w") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 

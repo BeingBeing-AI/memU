@@ -23,7 +23,7 @@ class MemoryItem(BaseModel):
     created_at: datetime | None
     memory_type: MemoryType
     summary: str
-    embedding: list[float]
+    embedding: list[float] | None
 
     def get_content(self) -> str:
         return self.summary

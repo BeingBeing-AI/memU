@@ -9,18 +9,27 @@ from typing import Dict, Any
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from ext.app.ext_service import ExtMemoryService
 from ext.ext_models import MemorizeRequest, RetrieveRequest, MultiRetrieveRequest, WeightedQuery
+from ext.memory.cluster import cluster_memories
+from ext.memory.condensation import condensation_memory_items, parse_condensation_result
 from ext.store.activity_item_store import retrieve_activity_items
-from ext.store.memory_item_store import retrieve_memory_items
+from ext.store.memory_item_store import retrieve_memory_items, get_all_memory_items, update_condensation_items
 from memu.app import DefaultUserModel
+from memu.llm.openai_sdk import OpenAISDKClient
 
-load_dotenv()
 
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 
+flash_llm_client = OpenAISDKClient(
+    base_url="https://gemini-965808384446.asia-east1.run.app/v1beta/openai",
+    api_key=os.getenv("NEBULA_API_KEY"),
+    chat_model="gemini-3-flash-preview",
+)
 
 def configure_logging() -> None:
     """Configure logging to emit both to stdout and a rotating file for log collection."""
@@ -155,6 +164,39 @@ async def clustering(user_id: str):
     resp = await memory_service.clustering(user=user)
     return JSONResponse(content={"status": "SUCCESS", "result": resp})
 
+@app.post("/api/v1/memory/condensation")
+async def condensation(user_id: str):
+    logger.info(f"condensation, user_id: {user_id}")
+    embedding_client = memory_service.embedding_client
+    memory_items = get_all_memory_items(user_id, include_embedding=True)
+    # TODO
+    if len(memory_items) < 500:
+        return JSONResponse(content={"status": "SKIP"})
+    clusters = cluster_memories(memory_items)
+    for label, c in clusters.items():
+        logger.info(f"Cluster {label}: {len(c)} items")
+        if label == -1:
+            continue
+        raw_items, result = await condensation_memory_items(flash_llm_client, c)
+        new_items = parse_condensation_result(original_items=c, result=result)
+        summaries = [i.summary for i in new_items]
+        embeddings = await embedding_client.embed(summaries)
+
+        # 将embeddings赋值给new_items
+        for i, embedding in enumerate(embeddings):
+            new_items[i].embedding = embedding
+
+        # 获取需要删除的原数据ID
+        old_ids = [item.id for item in c]
+
+        # 在同一个事务中执行删除和插入操作
+        try:
+            delete_count, insert_count = update_condensation_items(user_id, old_ids, new_items)
+            logger.info(f"condensation: {delete_count} old items deleted, {insert_count} new items inserted")
+        except Exception as e:
+            msg = f"Condensation error: {e}"
+            logger.error(msg)
+            return JSONResponse(content={"status": "ERROR", "message": msg})
 
 
 @app.post("/api/v1/memory/retrieve-category-summary")
