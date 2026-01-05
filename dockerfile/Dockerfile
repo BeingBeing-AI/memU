@@ -9,7 +9,7 @@ FROM base AS deps
 COPY pyproject.toml uv.lock ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-  UV_HTTP_TIMEOUT=120s uv sync --frozen --no-dev --no-install-project --index-url https://mirrors.ivolces.com/pypi/simple/
+  UV_HTTP_TIMEOUT=120 uv sync --frozen --no-dev --no-install-project --index-url https://mirrors.ivolces.com/pypi/simple/
 
 # -----------------------------------------------------------------------------
 # Builder stage: compile the Rust extension and package memu
