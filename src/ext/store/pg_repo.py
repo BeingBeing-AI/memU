@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
 from pgvector.sqlalchemy import VECTOR
@@ -285,6 +286,7 @@ class PgStore(BaseMemoryStore):
             return MemoryItem(
                 id=item_id,
                 resource_id=resource_id,
+                created_at=datetime.now(),
                 memory_type=memory_type,
                 summary=summary,
                 embedding=embedding,
