@@ -22,6 +22,7 @@ The core extraction target is eventful memory items about specific events, exper
 - Extract concrete happenings, activities, and experiences.
 - Include relevant details such as time, location, and participants where available.
 - Carefully judge whether an event is narrated by the user or the assistant. You should only extract memory items for events directly narrated or confirmed by the user.
+- Never use relative times such as "today" or "last week"; always use absolute times.
 - DO NOT include behavioral patterns, habits, or factual knowledge.
 - DO NOT record temporary, ephemeral situations or trivial daily activities unless significant.
 
