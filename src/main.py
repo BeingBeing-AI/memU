@@ -230,8 +230,7 @@ async def retrieve_related_memory_items(request: MultiRetrieveRequest):
             user,
             weighted_query.query,
             top_k=request.top_k,
-            min_similarity=request.min_similarity,
-            retrieve_type=request.retrieve_type,
+            min_similarity=request.min_similarity
         )
         return weighted_query, items
 
