@@ -3,20 +3,25 @@ import json
 import logging
 import os
 import time
+import uuid
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Dict, Any
 
 from dotenv import load_dotenv
 
+from memu.models import MemoryItem
+
 load_dotenv()
 
 from ext.app.ext_service import ExtMemoryService
-from ext.ext_models import MemorizeRequest, RetrieveRequest, MultiRetrieveRequest, WeightedQuery
+from ext.ext_models import MemorizeRequest, RetrieveRequest, MultiRetrieveRequest, WeightedQuery, AddMemoryItemRequest
 from ext.memory.cluster import cluster_memories
 from ext.memory.condensation import condensation_memory_items, parse_condensation_result
 from ext.store.activity_item_store import retrieve_activity_items
-from ext.store.memory_item_store import retrieve_memory_items, get_all_memory_items, update_condensation_items
+from ext.store.memory_item_store import retrieve_memory_items, get_all_memory_items, update_condensation_items, \
+    add_memory_items
 from memu.app import DefaultUserModel
 from memu.llm.openai_sdk import OpenAISDKClient
 
@@ -356,6 +361,54 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
     logger.info(f"retrieve_items_by_queries completed, elapsed_time: {elapsed_time:.4f}s, response: {resp}")
 
     return JSONResponse(content=resp)
+
+@app.post("/api/v1/memory/items/add")
+async def add_memory_items_endpoint(request: AddMemoryItemRequest):
+    logger.info(f"Add memory items: {request}")
+    try:
+        # 为每个摘要生成embedding
+        embeddings = await memory_service.embedding_client.embed(request.summaries)
+
+        # 创建MemoryItem对象列表
+        memory_items = []
+        for i, summary in enumerate(request.summaries):
+            # 为每个摘要生成唯一的resource_id
+            resource_id = request.resource_id if request.resource_id else f"manual-{uuid.uuid4()}"
+
+            memory_item = MemoryItem(
+                id=str(uuid.uuid4()),
+                resource_id=resource_id,
+                created_at=datetime.now(),
+                memory_type="knowledge",
+                summary=summary,
+                embedding=embeddings[i] if i < len(embeddings) else None
+            )
+            memory_items.append(memory_item)
+
+        # 调用批量插入方法
+        saved_items = add_memory_items(memory_items, request.user_id)
+
+        # 返回保存成功的项目数量和详情
+        return JSONResponse(content={
+            "status": "SUCCESS",
+            "count": len(saved_items),
+            "saved_items": [
+                {
+                    "id": item.id,
+                    "summary": item.summary,
+                    "memory_type": item.memory_type,
+                    "created_at": item.created_at.isoformat() if item.created_at else None
+                }
+                for item in saved_items
+            ]
+        })
+
+    except Exception as e:
+        logger.error(f"Error adding memory items: {e}")
+        return JSONResponse(
+            content={"status": "ERROR", "message": str(e)},
+            status_code=500
+        )
 
 @app.get("/health")
 async def health():

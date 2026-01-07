@@ -47,3 +47,10 @@ class MultiRetrieveRequest(NonStrictBaseModel):
     query: str | None = None
     top_k: int = 10
     min_similarity: float = 0.3
+
+
+class AddMemoryItemRequest(NonStrictBaseModel):
+    user_id: str
+    summaries: list[str]
+    resource_id: str | None = None
+

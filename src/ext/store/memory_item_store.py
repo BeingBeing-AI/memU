@@ -135,3 +135,65 @@ def update_condensation_items(user_id: str, old_ids: list[str], new_items: List[
         raise e
     finally:
         session.close()
+
+
+def add_memory_items(memory_items: List[MemoryItem], user_id: str) -> List[MemoryItem]:
+    """批量添加记忆项到数据库
+
+    Args:
+        memory_items: MemoryItem 对象列表，包含要保存的记忆项信息
+        user_id: 用户ID
+
+    Returns:
+        List[MemoryItem]: 保存成功后的 MemoryItem 对象列表
+
+    Raises:
+        Exception: 如果保存失败，会抛出异常
+    """
+    session = shared_engine.session()
+    try:
+        # 创建数据库模型列表
+        db_items = []
+        for memory_item in memory_items:
+            # 生成新的ID（如果memory_item没有ID）
+            item_id = memory_item.id or str(uuid.uuid4())
+
+            db_item = MemoryItemModel(
+                id=item_id,
+                user_id=user_id,
+                created_at=memory_item.created_at,
+                resource_id=memory_item.resource_id,
+                memory_type=str(memory_item.memory_type),
+                summary=memory_item.summary,
+                embedding=memory_item.embedding,
+                is_deleted=False
+            )
+            db_items.append(db_item)
+
+        # 批量插入
+        session.add_all(db_items)
+        session.commit()
+
+        # 返回保存成功的 MemoryItem 对象列表
+        saved_items = []
+        for db_item in db_items:
+            # 找到对应的原始 memory_item
+            original_item = next((item for item in memory_items if item.id == db_item.id), None)
+            memory_type = original_item.memory_type if original_item else db_item.memory_type
+
+            saved_item = MemoryItem(
+                id=db_item.id,
+                resource_id=db_item.resource_id,
+                created_at=db_item.created_at,
+                memory_type=memory_type,
+                summary=db_item.summary,
+                embedding=db_item.embedding.tolist() if db_item.embedding is not None else []
+            )
+            saved_items.append(saved_item)
+
+        return saved_items
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
