@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: memu
-          image: memu-server:latest
+          image:  ${IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
