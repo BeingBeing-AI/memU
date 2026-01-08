@@ -1,0 +1,75 @@
+FROM python:3.14-slim AS base
+
+RUN --mount=type=cache,target=/var/cache/apt \
+  --mount=type=cache,target=/var/lib/apt \
+  apt-get update \
+  && apt-get install -y --no-install-recommends build-essential curl pkg-config \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install uv once and reuse it in every stage
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+WORKDIR /app
+
+# -----------------------------------------------------------------------------
+# Dependency stage: resolve and install Python deps without the local project
+# -----------------------------------------------------------------------------
+FROM base AS deps
+
+COPY pyproject.toml uv.lock ./
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+  UV_HTTP_TIMEOUT=600 uv sync --frozen --no-dev --no-install-project
+
+# -----------------------------------------------------------------------------
+# Builder stage: compile the Rust extension and package memu
+# -----------------------------------------------------------------------------
+FROM base AS builder
+
+ENV CARGO_HOME=/root/.cargo \
+    RUSTUP_HOME=/root/.rustup
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable \
+    && /root/.cargo/bin/rustc --version \
+    && /root/.cargo/bin/cargo --version
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN python -m pip install --no-cache-dir maturin==1.7.4
+
+COPY . .
+
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    --mount=type=cache,target=/app/target \
+    maturin build --release --locked --strip --out /tmp/dist
+
+RUN set -eux; \
+    wheel="$(ls -1 /tmp/dist/memu_py-*.whl | head -n 1)"; \
+    python -m pip install --no-deps --no-cache-dir --target /tmp/package "${wheel}"
+
+# -----------------------------------------------------------------------------
+# Runtime stage: start from cached deps, overlay source + compiled artifacts
+# -----------------------------------------------------------------------------
+FROM deps AS runtime
+
+ENV MEMU_LOG_DIR=/var/log/memu \
+    MEMU_LOG_FILENAME=app.log \
+    MEMU_LOG_LEVEL=INFO
+
+RUN mkdir -p "${MEMU_LOG_DIR}"
+
+# Copy the rest of the application (invalidates only when sources change)
+COPY . .
+
+# Overwrite the source package with the freshly built binary artifacts
+COPY --from=builder /tmp/package/memu /app/src/memu
+
+# Expose the port that FastAPI will run on
+EXPOSE 8000
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src:${PYTHONPATH:-}"
+
+# 使用 Gunicorn 启动，设置 worker 数量
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "8", "-b", "0.0.0.0:8000", "src.main:app"]
