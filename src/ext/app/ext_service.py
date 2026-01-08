@@ -32,6 +32,52 @@ class ExtUserContext(_UserContext):
 
 
 class ExtMemoryService(MemoryService):
+    def _init_llm_client(self) -> Any:
+        """Initialize LLM client based on configuration."""
+        backend = self.llm_config.client_backend
+        if backend == "sdk":
+            base_url = self.llm_config.base_url
+
+            # 检查 base_url 是否包含 api-version 参数
+            if "api-version=" in base_url:
+                # 解析 api-version 和 endpoint
+                from urllib.parse import urlparse, parse_qs
+
+                parsed_url = urlparse(base_url)
+                query_params = parse_qs(parsed_url.query)
+                api_version = query_params.get("api-version", [None])[0]
+
+                # 构建不含查询参数的 endpoint
+                endpoint = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+                from ext.llm.openai_azure_sdk import OpenAIAzureSDKClient
+                return OpenAIAzureSDKClient(
+                    azure_endpoint=endpoint,
+                    api_key=self.llm_config.api_key,
+                    api_version=api_version,
+                    chat_model=self.llm_config.chat_model,
+                )
+            else:
+                from memu.llm.openai_sdk import OpenAISDKClient
+                return OpenAISDKClient(
+                    base_url=self.llm_config.base_url,
+                    api_key=self.llm_config.api_key,
+                    chat_model=self.llm_config.chat_model,
+                )
+        elif backend == "httpx":
+            from memu.llm.http_client import HTTPLLMClient
+
+            return HTTPLLMClient(
+                base_url=self.llm_config.base_url,
+                api_key=self.llm_config.api_key,
+                chat_model=self.llm_config.chat_model,
+                provider=self.llm_config.provider,
+                endpoint_overrides=self.llm_config.endpoint_overrides,
+            )
+        else:
+            msg = f"Unknown llm_client_backend '{self.llm_config.client_backend}'"
+            raise ValueError(msg)
+
     def _init_embedding_client(self) -> Any:
         """Initialize embedding client based on configuration."""
         backend = self.embedding_config.client_backend
