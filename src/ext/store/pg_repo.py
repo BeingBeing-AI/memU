@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -31,7 +32,7 @@ from memu.models import (
 
 logger = logging.getLogger(__name__)
 
-VECTOR_DIMENSION = 1024
+VECTOR_DIMENSION = os.getenv("VECTOR_DIMENSION", 1024)
 
 
 category_items_table = Table(
