@@ -106,10 +106,10 @@ def retrieve_activity_items_to_memory(
         for db_item, similarity_score in results:
             activity_items.append(
                 ExtMemoryItem(
-                    id=db_item.id,
+                    id=str(db_item.id),
                     user_id=db_item.user_id,
                     resource_id=db_item.session_id,
-                    memory_type="",
+                    memory_type="event",
                     summary=db_item.content,
                     mentioned_at=str(db_item.mentioned_at),
                     created_at=str(db_item.created_at),
