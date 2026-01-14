@@ -109,7 +109,7 @@ def retrieve_activity_items_to_memory(
                     id=db_item.id,
                     user_id=db_item.user_id,
                     resource_id=db_item.session_id,
-                    memory_type="activity",
+                    memory_type="",
                     summary=db_item.content,
                     mentioned_at=str(db_item.mentioned_at),
                     created_at=str(db_item.created_at),
