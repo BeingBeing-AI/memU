@@ -33,11 +33,11 @@ class RetrieveRequest(NonStrictBaseModel):
     retrieve_type: str = "rag"
 
 
-class ExtMemoryItem(MemoryItem):
+class ExtMemoryItem(MemoryItem, NonStrictBaseModel):
     similarity_score: float
-    mentioned_at: str
-    created_at: str
-    updated_at: str
+    mentioned_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class WeightedQuery(NonStrictBaseModel):
