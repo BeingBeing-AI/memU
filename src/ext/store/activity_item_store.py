@@ -63,13 +63,26 @@ def get_all_activity_items(user_id: int) -> List[MemoryActivityItem]:
         session.close()
 
 
-def retrieve_activity_items(
-    user_id: int,
-    qvec: List[float],
-    top_k: int = 10,
-    min_similarity: float = 0.3,
-    include_embedding: bool = False,
-) -> List[MemoryActivityItem]:
+def _model_to_item(item: MemoryActivityItemModel) -> MemoryActivityItem:
+    return MemoryActivityItem(
+        id=item.id,
+        user_id=item.user_id,
+        conversation_id=item.conversation_id,
+        session_id=item.session_id,
+        content=item.content,
+        mentioned_at=str(item.mentioned_at),
+        created_at=str(item.created_at),
+        updated_at=str(item.updated_at),
+        search_content=item.search_content,
+    )
+
+def retrieve_activity_items_dict(
+        user_id: int,
+        qvec: List[float],
+        top_k: int = 10,
+        min_similarity: float = 0.3,
+        include_embedding: bool = False,
+) -> List[dict]:
     """基于向量相似度检索当前用户的记忆活动项"""
     session = shared_engine.session()
     try:
@@ -91,21 +104,18 @@ def retrieve_activity_items(
         activity_items: List[MemoryActivityItem] = []
         for db_item, similarity_score in results:
             activity_items.append(
-                MemoryActivityItem(
-                    id=db_item.id,
-                    user_id=db_item.user_id,
-                    conversation_id=db_item.conversation_id,
-                    session_id=db_item.session_id,
-                    content=db_item.content,
-                    mentioned_at=str(db_item.mentioned_at),
-                    created_at=str(db_item.created_at),
-                    updated_at=str(db_item.updated_at),
-                    search_content=db_item.search_content,
-                    embedding=db_item.embedding.tolist() if include_embedding and db_item.embedding is not None else None,
-                    clustered=db_item.clustered,
-                    similarity_score=similarity_score,
-                )
+                _model_to_dict(db_item)
             )
         return activity_items
     finally:
         session.close()
+
+def _model_to_dict(item: MemoryActivityItemModel) -> MemoryActivityItem:
+    return {
+        "id": item.id,
+        "user_id": item.user_id,
+        "summary": item.content,
+        "mentioned_at": str(item.mentioned_at),
+        "created_at": str(item.created_at),
+        "updated_at": str(item.updated_at),
+    }

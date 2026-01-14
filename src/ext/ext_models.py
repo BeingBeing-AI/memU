@@ -35,6 +35,7 @@ class RetrieveRequest(NonStrictBaseModel):
 
 class ExtMemoryItem(MemoryItem):
     similarity_score: float
+    mentioned_at: str
     created_at: str
     updated_at: str
 

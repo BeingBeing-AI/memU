@@ -65,14 +65,18 @@ def retrieve_memory_items(
 
         memory_items = []
         for db_item, similarity_score in results:
+            created_at = db_item.created_at.isoformat() if db_item.created_at else None
             memory_item = ExtMemoryItem(
                 id=db_item.id,
                 resource_id=db_item.resource_id,
                 memory_type=db_item.memory_type,
                 summary=db_item.summary,
-                embedding=db_item.embedding.tolist() if include_embedding and db_item.embedding is not None else [],
+                # 目前不需要返回 embedding
+                embedding=None,
                 similarity_score=similarity_score,
-                created_at=db_item.created_at.isoformat() if db_item.created_at else None,
+                # 先使用 created_at 作为 mentioned_at
+                mentioned_at=created_at,
+                created_at=created_at,
                 updated_at=db_item.updated_at.isoformat() if db_item.updated_at else None
             )
             memory_items.append(memory_item)
