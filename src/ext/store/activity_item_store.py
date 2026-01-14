@@ -15,6 +15,7 @@ from sqlalchemy.sql import func
 
 from ext.store.pg_session import shared_engine, Base
 from memu.models import MemoryActivityItem
+from ext.ext_models import ExtMemoryItem
 
 
 class MemoryActivityItemModel(Base):
@@ -76,13 +77,13 @@ def _model_to_item(item: MemoryActivityItemModel) -> MemoryActivityItem:
         search_content=item.search_content,
     )
 
-def retrieve_activity_items_dict(
+def retrieve_activity_items_to_memory(
         user_id: int,
         qvec: List[float],
         top_k: int = 10,
         min_similarity: float = 0.3,
         include_embedding: bool = False,
-) -> List[dict]:
+) -> List[ExtMemoryItem]:
     """基于向量相似度检索当前用户的记忆活动项"""
     session = shared_engine.session()
     try:
@@ -104,18 +105,18 @@ def retrieve_activity_items_dict(
         activity_items: List[MemoryActivityItem] = []
         for db_item, similarity_score in results:
             activity_items.append(
-                _model_to_dict(db_item)
+                ExtMemoryItem(
+                    id=db_item.id,
+                    user_id=db_item.user_id,
+                    resource_id=db_item.session_id,
+                    memory_type="activity",
+                    summary=db_item.content,
+                    mentioned_at=str(db_item.mentioned_at),
+                    created_at=str(db_item.created_at),
+                    updated_at=str(db_item.updated_at),
+                    similarity_score=similarity_score,
+                )
             )
         return activity_items
     finally:
         session.close()
-
-def _model_to_dict(item: MemoryActivityItemModel) -> MemoryActivityItem:
-    return {
-        "id": item.id,
-        "user_id": item.user_id,
-        "summary": item.content,
-        "mentioned_at": str(item.mentioned_at),
-        "created_at": str(item.created_at),
-        "updated_at": str(item.updated_at),
-    }

@@ -19,7 +19,7 @@ from ext.app.ext_service import ExtMemoryService
 from ext.ext_models import MemorizeRequest, RetrieveRequest, MultiRetrieveRequest, WeightedQuery, AddMemoryItemRequest
 from ext.memory.cluster import cluster_memories
 from ext.memory.condensation import condensation_memory_items, parse_condensation_result
-from ext.store.activity_item_store import retrieve_activity_items_dict
+from ext.store.activity_item_store import retrieve_activity_items_to_memory
 from ext.store.memory_item_store import retrieve_memory_items, get_all_memory_items, update_condensation_items, \
     add_memory_items
 from memu.app import DefaultUserModel
@@ -294,7 +294,7 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
     async def fetch_results(qvec, query_source: str = "memory_item"):
         if query_source == "activity_item":
             items = await asyncio.to_thread(
-                retrieve_activity_items_dict,
+                retrieve_activity_items_to_memory,
                 int(request.user_id),
                 qvec,
                 request.top_k,
