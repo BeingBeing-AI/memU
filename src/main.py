@@ -351,11 +351,14 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
             weighted_items_by_source[query_source].append(item_dict)
 
     # 按加权相似度排序并取top_k
-    resp = {}
+    resp = []
     top_k = request.top_k
     for query_source, items in weighted_items_by_source.items():
         items.sort(key=lambda x: x["weighted_similarity"], reverse=True)
-        resp[query_source] = items[:top_k]
+        resp.append({
+            "query_source": query_source,
+            "items": items,
+        })
 
     # 计算耗时
     elapsed_time = time.time() - start_time
