@@ -359,7 +359,7 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
         items.sort(key=lambda x: x["weighted_similarity"], reverse=True)
         sources.append({
             "query_source": query_source,
-            "items": items,
+            "items": items[:top_k] if top_k < len(items) else items,
         })
     resp = {
         "total_found": total_found,
