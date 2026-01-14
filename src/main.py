@@ -292,7 +292,7 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
         request.queries = [WeightedQuery(query=request.query, weight=1.0)]
 
     async def fetch_results(qvec, query_source: str = "memory_item"):
-        if query_source == "activity":
+        if query_source == "activity_item":
             items = await asyncio.to_thread(
                 retrieve_activity_items,
                 int(request.user_id),
@@ -300,61 +300,62 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
                 request.top_k,
                 request.min_similarity,
             )
-            return "activity", items
-
-        items = await asyncio.to_thread(
-            retrieve_memory_items,
-            request.user_id,
-            qvec,
-            request.top_k,
-            request.min_similarity,
-        )
-        return "memory_item", items
+        elif query_source == "memory_item":
+            items = await asyncio.to_thread(
+                retrieve_memory_items,
+                request.user_id,
+                qvec,
+                request.top_k,
+                request.min_similarity,
+            )
+        elif query_source == "global_memory":
+            items = await asyncio.to_thread(
+                retrieve_memory_items,
+                # 默认使用 0 作为系统用户，存储 global memory
+                '0',
+                qvec,
+                request.top_k,
+                request.min_similarity,
+            )
+        else:
+            items = []
+        return query_source, items
 
     qvecs = await memory_service.embedding_client.embed([q.query for q in request.queries])
 
+    async def fetch_with_meta(query_index: int, query_vector: list[float], source: str):
+        query_source, items = await fetch_results(query_vector, source)
+        return query_index, query_source, items
+
     tasks = [
-        fetch_results(q, source)
-        for q in qvecs
-        for source in ("memory_item", "activity")
+        fetch_with_meta(query_index, qvec, source)
+        for query_index, qvec in enumerate(qvecs)
+        for source in request.query_sources
     ]
     query_results = await asyncio.gather(*tasks)
 
     # 按照queries中的weight值对每个结果的相似度分数进行加权
-    weighted_memory_items = []
-    weighted_activity_items = []
+    weighted_items_by_source: dict[str, list[dict[str, Any]]] = {
+        query_source: [] for query_source in request.query_sources
+    }
 
     # 将query_results与对应的weight关联
-    for i, (query_source, items) in enumerate(query_results):
-        # 计算这个结果对应的query索引
-        # 每个query会产生两个source的结果(memory_item和activity)，所以索引要除以2
-        query_index = i // 2
-        query = request.queries[query_index]
-        weight = query.weight
+    for query_index, query_source, items in query_results:
+        weight = request.queries[query_index].weight
 
         # 为每个item添加weight信息
         for item in items:
             item_dict = item.model_dump()
-            item_dict['weighted_similarity'] = item.similarity_score * weight
-            item_dict['query_weight'] = weight
-
-            if query_source == "activity":
-                weighted_activity_items.append(item_dict)
-            else:
-                weighted_memory_items.append(item_dict)
+            item_dict["weighted_similarity"] = item.similarity_score * weight
+            item_dict["query_weight"] = weight
+            weighted_items_by_source[query_source].append(item_dict)
 
     # 按加权相似度排序并取top_k
-    weighted_memory_items.sort(key=lambda x: x['weighted_similarity'], reverse=True)
-    weighted_activity_items.sort(key=lambda x: x['weighted_similarity'], reverse=True)
-
+    resp = {}
     top_k = request.top_k
-    memory_items_topk = weighted_memory_items[:top_k]
-    activity_items_topk = weighted_activity_items[:top_k]
-
-    resp = {
-        "memory_items": memory_items_topk,
-        "activity_items": activity_items_topk,
-    }
+    for query_source, items in weighted_items_by_source.items():
+        items.sort(key=lambda x: x["weighted_similarity"], reverse=True)
+        resp[query_source] = items[:top_k]
 
     # 计算耗时
     elapsed_time = time.time() - start_time

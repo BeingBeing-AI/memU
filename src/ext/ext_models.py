@@ -1,8 +1,11 @@
 from typing import List
 
 from pydantic import BaseModel, ConfigDict
+from typing import Literal
 
 from memu.models import MemoryItem
+
+RetrieveQuerySource = Literal["activity_item", "memory_item", "global_memory"]
 
 class NonStrictBaseModel(BaseModel):
     # Allow coercion instead of strict type enforcement for external-facing requests.
@@ -47,6 +50,7 @@ class MultiRetrieveRequest(NonStrictBaseModel):
     query: str | None = None
     top_k: int = 10
     min_similarity: float = 0.3
+    query_sources: List[RetrieveQuerySource] = ["activity_item", "memory_item"]
 
 
 class AddMemoryItemRequest(NonStrictBaseModel):
