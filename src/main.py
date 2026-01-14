@@ -340,7 +340,9 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
     }
 
     # 将query_results与对应的weight关联
+    total_found = 0
     for query_index, query_source, items in query_results:
+        total_found += len(items)
         weight = request.queries[query_index].weight
 
         # 为每个item添加weight信息
@@ -351,14 +353,18 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
             weighted_items_by_source[query_source].append(item_dict)
 
     # 按加权相似度排序并取top_k
-    resp = []
+    sources = []
     top_k = request.top_k
     for query_source, items in weighted_items_by_source.items():
         items.sort(key=lambda x: x["weighted_similarity"], reverse=True)
-        resp.append({
+        sources.append({
             "query_source": query_source,
             "items": items,
         })
+    resp = {
+        "total_found": total_found,
+        "sources": sources,
+    }
 
     # 计算耗时
     elapsed_time = time.time() - start_time

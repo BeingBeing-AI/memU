@@ -49,7 +49,7 @@ class MultiRetrieveRequest(NonStrictBaseModel):
     queries: List[WeightedQuery] | None = None
     query: str | None = None
     top_k: int = 10
-    min_similarity: float = 0.3
+    min_similarity: float = 0.4
     query_sources: List[RetrieveQuerySource] = ["activity_item", "memory_item"]
 
 
