@@ -72,9 +72,9 @@ def init_memory_service():
         },
         embedding_config={
             "client_backend": "sdk",
-            "base_url": os.getenv("QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-            "api_key": os.getenv("QWEN_API_KEY"),
-            "embed_model": "text-embedding-v4",
+            "base_url": os.getenv("EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+            "api_key": os.getenv("EMBEDDING_API_KEY", os.getenv("QWEN_API_KEY")),
+            "embed_model": os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-v4")
         },
         memorize_config={
             "category_summary_target_length": 300

@@ -1,20 +1,12 @@
 import os
-from typing import List, Optional
+from typing import Optional
+
 from sqlalchemy import (
-    BigInteger,
-    Boolean,
-    Column,
-    Date,
-    DateTime,
     Engine,
-    Index,
-    String,
-    Table,
-    Text,
     create_engine,
 )
-from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 
 Base = declarative_base()
 
