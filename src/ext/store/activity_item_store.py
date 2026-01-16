@@ -17,6 +17,7 @@ from ext.store.pg_session import shared_engine, Base
 from memu.models import MemoryActivityItem
 from ext.ext_models import ExtMemoryItem
 
+VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))
 
 class MemoryActivityItemModel(Base):
     __tablename__ = "memory_activity_items"
@@ -30,7 +31,7 @@ class MemoryActivityItemModel(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     search_content = Column(TSVECTOR, nullable=True)
-    embedding = Column(VECTOR(1024), nullable=True)
+    embedding = Column(VECTOR(VECTOR_DIMENSION), nullable=True)
     clustered = Column(Boolean, default=False, nullable=False)
 
 
