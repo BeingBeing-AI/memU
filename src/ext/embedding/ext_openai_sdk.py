@@ -2,6 +2,8 @@ from typing import cast
 from urllib.parse import parse_qs, urlparse
 
 from openai import AsyncAzureOpenAI
+
+from ext.ext_config import VECTOR_DIMENSION
 from memu.embedding import OpenAIEmbeddingSDKClient
 
 
@@ -37,7 +39,7 @@ class ExtOpenAIEmbeddingSDKClient(OpenAIEmbeddingSDKClient):
         all_embeddings = []
         for i in range(0, len(inputs), batch_size):
             batch = inputs[i : i + batch_size]
-            response = await self.client.embeddings.create(model=self.embed_model, input=batch)
+            response = await self.client.embeddings.create(model=self.embed_model, input=batch, dimensions=VECTOR_DIMENSION)
             emb = [cast(list[float], d.embedding) for d in response.data]
             all_embeddings.extend(emb)
         return all_embeddings

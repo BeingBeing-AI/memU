@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
+from ext.ext_config import VECTOR_DIMENSION
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     Boolean,
@@ -31,8 +32,6 @@ from memu.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))
 
 
 category_items_table = Table(

@@ -1,6 +1,7 @@
 from typing import List
 
 import os
+from ext.ext_config import VECTOR_DIMENSION
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     BigInteger,
@@ -17,8 +18,6 @@ from sqlalchemy.sql import func
 from ext.store.pg_session import shared_engine, Base
 from memu.models import MemoryActivityItem
 from ext.ext_models import ExtMemoryItem
-
-VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))
 
 class MemoryActivityItemModel(Base):
     __tablename__ = "memory_activity_items"
