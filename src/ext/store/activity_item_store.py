@@ -1,5 +1,6 @@
 from typing import List
 
+import os
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import (
     BigInteger,
