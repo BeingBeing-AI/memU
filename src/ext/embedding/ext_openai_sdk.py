@@ -1,3 +1,4 @@
+import logging
 from typing import cast
 from urllib.parse import parse_qs, urlparse
 
@@ -5,6 +6,9 @@ from openai import AsyncAzureOpenAI
 
 from ext.ext_config import VECTOR_DIMENSION
 from memu.embedding import OpenAIEmbeddingSDKClient
+
+logger = logging.getLogger(__file__)
+MAX_EMBED_QUERY_CHARS = 8000
 
 
 class ExtOpenAIEmbeddingSDKClient(OpenAIEmbeddingSDKClient):
@@ -39,7 +43,23 @@ class ExtOpenAIEmbeddingSDKClient(OpenAIEmbeddingSDKClient):
         all_embeddings = []
         for i in range(0, len(inputs), batch_size):
             batch = inputs[i : i + batch_size]
-            response = await self.client.embeddings.create(model=self.embed_model, input=batch, dimensions=VECTOR_DIMENSION)
+            sanitized_batch = []
+            for text in batch:
+                trimmed = text.strip()
+                if not trimmed:
+                    msg = "Embedding input must not be empty after trimming"
+                    logger.warning(msg)
+                    raise ValueError(msg)
+                if len(trimmed) > MAX_EMBED_QUERY_CHARS:
+                    logger.info(
+                        "Truncating embedding input: original_len=%d, max_len=%d",
+                        len(trimmed),
+                        MAX_EMBED_QUERY_CHARS,
+                    )
+                    trimmed = trimmed[:MAX_EMBED_QUERY_CHARS]
+                sanitized_batch.append(trimmed)
+
+            response = await self.client.embeddings.create(model=self.embed_model, input=sanitized_batch, dimensions=VECTOR_DIMENSION)
             emb = [cast(list[float], d.embedding) for d in response.data]
             all_embeddings.extend(emb)
         return all_embeddings
