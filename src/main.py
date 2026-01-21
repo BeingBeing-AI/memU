@@ -322,6 +322,7 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
         return query_source, items
 
     qvecs = await memory_service.embedding_client.embed([q.query for q in request.queries])
+    embed_elapsed = time.time() - start_time
 
     async def fetch_with_meta(query_index: int, query_vector: list[float], source: str):
         query_source, items = await fetch_results(query_vector, source)
@@ -332,7 +333,9 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
         for query_index, qvec in enumerate(qvecs)
         for source in request.query_sources
     ]
+    db_start = time.time()
     query_results = await asyncio.gather(*tasks)
+    db_elapsed = time.time() - db_start
 
     # 按照queries中的weight值对每个结果的相似度分数进行加权
     weighted_items_by_source: dict[str, list[dict[str, Any]]] = {
@@ -368,7 +371,13 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
 
     # 计算耗时
     elapsed_time = time.time() - start_time
-    logger.info(f"retrieve_items_by_queries completed, elapsed_time: {elapsed_time:.4f}s, response: {resp}")
+    logger.info(
+        "retrieve_items_by_queries timings: total=%.4fs, embed=%.4fs, db=%.4fs, total_found=%d",
+        elapsed_time,
+        embed_elapsed,
+        db_elapsed,
+        total_found,
+    )
 
     return JSONResponse(content=resp)
 
