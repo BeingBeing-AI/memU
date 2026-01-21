@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -36,6 +37,37 @@ flash_llm_client = OpenAISDKClient(
     chat_model="gemini-3-flash-preview",
 )
 
+
+trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="-")
+
+
+class TraceIdFilter(logging.Filter):
+    """Attach the current trace id (if any) to log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.trace_id = trace_id_ctx.get("-")
+        return True
+
+
+TRACE_HEADER_CANDIDATES = ("traceparent", "x-trace-id", "traceid", "trace-id", "x-request-id")
+
+
+def _extract_trace_id(request: Request) -> str:
+    """Extract trace id from headers or generate a new one."""
+    headers = request.headers
+    traceparent = headers.get("traceparent")
+    if traceparent:
+        parts = traceparent.split("-")
+        if len(parts) >= 2 and parts[1]:
+            return parts[1]
+
+    for header in TRACE_HEADER_CANDIDATES:
+        value = headers.get(header)
+        if value:
+            return value
+
+    return uuid.uuid4().hex
+
 def configure_logging() -> None:
     """Configure logging to emit both to stdout and a rotating file for log collection."""
     log_dir = Path(os.getenv("MEMU_LOG_DIR", "/var/log/memu"))
@@ -50,9 +82,12 @@ def configure_logging() -> None:
         RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=5),
     ]
 
+    for handler in handlers:
+        handler.addFilter(TraceIdFilter())
+
     logging.basicConfig(
         level=log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        format="%(asctime)s [%(levelname)s] [trace_id=%(trace_id)s] %(name)s: %(message)s",
         handlers=handlers,
         force=True,
     )
@@ -87,6 +122,19 @@ def init_memory_service():
 
 app = FastAPI(strict_validation=False)
 memory_service = init_memory_service()
+
+
+@app.middleware("http")
+async def attach_trace_id(request: Request, call_next):
+    trace_id = _extract_trace_id(request)
+    token = trace_id_ctx.set(trace_id)
+    try:
+        response = await call_next(request)
+    finally:
+        trace_id_ctx.reset(token)
+
+    response.headers["X-Trace-Id"] = trace_id
+    return response
 
 
 @app.exception_handler(RequestValidationError)
