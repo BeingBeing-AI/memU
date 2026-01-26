@@ -330,7 +330,9 @@ def render_svg(relatives_message: str, my_message: str) -> str:
     bubble_start_x = STYLE.x + relatives_avatar_width + STYLE.avatar_gap
     base_bubble_max_width = max(1, STYLE.max_width - (bubble_start_x - STYLE.x))
     my_avatar_x = canvas_width_int - STYLE.x - my_avatar_width
-    my_bubble_max_width = max(1, min(base_bubble_max_width, my_avatar_x - STYLE.avatar_gap - bubble_start_x))
+    bubble_right_limit = my_avatar_x - STYLE.avatar_gap - bubble_start_x
+    relatives_bubble_max_width = max(1, min(base_bubble_max_width, bubble_right_limit))
+    my_bubble_max_width = max(1, min(base_bubble_max_width, bubble_right_limit))
 
     current_y = STYLE.start_y
 
@@ -341,7 +343,7 @@ def render_svg(relatives_message: str, my_message: str) -> str:
         text=relatives_message,
         font=font,
         style=STYLE,
-        max_width=base_bubble_max_width,
+        max_width=relatives_bubble_max_width,
     )
     _render_avatar(
         chat_group,
@@ -424,6 +426,6 @@ async def generate_spring_card(request: CardRequest):
     return JSONResponse(content={"content": output_svg})
 
 if __name__ == '__main__':
-    result = render_svg("今年过节不收礼", "收礼只收脑白金，你是不是指望我回你这句呢")
+    result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
     with open("output.svg", "w", encoding="utf-8") as f:
         f.write(result)
