@@ -30,6 +30,7 @@ from memu.llm.openai_sdk import OpenAISDKClient
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from spring_campaign import router as spring_campaign_router
 
 flash_llm_client = OpenAISDKClient(
     base_url="https://gemini-965808384446.asia-east1.run.app/v1beta/openai",
@@ -121,6 +122,7 @@ def init_memory_service():
 
 
 app = FastAPI(strict_validation=False)
+app.include_router(spring_campaign_router)
 memory_service = init_memory_service()
 
 
