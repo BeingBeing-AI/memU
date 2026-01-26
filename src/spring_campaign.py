@@ -12,7 +12,12 @@ from xml.etree import ElementTree as ET
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
+from starlette.responses import JSONResponse
 
+
+class CardRequest(BaseModel):
+    relatives_message: str
+    my_message: str
 
 class CardResponse(BaseModel):
     card_content: str
@@ -413,10 +418,10 @@ async def ensure_resources():
 
 
 @router.post("/api/campaign/2026-spring/generate-card", response_model=CardResponse)
-async def generate_spring_card(relatives_message: str, my_message: str) -> CardResponse:
+async def generate_spring_card(request: CardRequest):
     await ensure_resources()
-    output_svg = render_svg(relatives_message, my_message)
-    return CardResponse(card_content=output_svg)
+    output_svg = render_svg(request.relatives_message, request.my_message)
+    return JSONResponse(content={"content": output_svg})
 
 if __name__ == '__main__':
     result = render_svg("今年过节不收礼", "收礼只收脑白金，你是不是指望我回你这句呢")
