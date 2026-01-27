@@ -23,6 +23,7 @@ from ext.memory.condensation import condensation_memory_items, parse_condensatio
 from ext.store.activity_item_store import retrieve_activity_items_to_memory
 from ext.store.memory_item_store import retrieve_memory_items, get_all_memory_items, update_condensation_items, \
     add_memory_items
+from ext.store.task_store import create_task, get_task_by_id, update_task
 from memu.app import DefaultUserModel
 from memu.llm.openai_sdk import OpenAISDKClient
 
@@ -125,6 +126,75 @@ app = FastAPI(strict_validation=False)
 app.include_router(spring_campaign_router)
 memory_service = init_memory_service()
 
+async def _run_condensation_task(task_id: int, user_id: str) -> None:
+    start_ts = time.time()
+    started_at = datetime.utcnow()
+    update_task(task_id, started_at=started_at)
+    try:
+        embedding_client = memory_service.embedding_client
+        memory_items = get_all_memory_items(user_id, include_embedding=True)
+        if len(memory_items) < 500:
+            update_task(
+                task_id,
+                status="COMPLETED",
+                content={
+                    "result": "SKIP",
+                    "message": "not enough memory items",
+                    "total_items": len(memory_items),
+                },
+                completed_at=datetime.utcnow(),
+                elapsed_time=int((time.time() - start_ts) * 1000),
+            )
+            return
+        clusters = cluster_memories(memory_items)
+        total_delete_count, total_insert_count = 0, 0
+        for label, c in clusters.items():
+            logger.info(f"condensation task_id={task_id} cluster={label} size={len(c)}")
+            if label == -1:
+                continue
+            raw_items, result = await condensation_memory_items(flash_llm_client, c)
+            logger.info(f"task_id={task_id} raw items: \n{raw_items}\nCondensation result: \n{result}\n")
+            new_items = parse_condensation_result(original_items=c, result=result)
+            summaries = [i.summary for i in new_items]
+            embeddings = await embedding_client.embed(summaries)
+
+            # 将embeddings赋值给new_items
+            for i, embedding in enumerate(embeddings):
+                new_items[i].embedding = embedding
+
+            # 获取需要删除的原数据ID
+            old_ids = [item.id for item in c]
+
+            # 在同一个事务中执行删除和插入操作
+            delete_count, insert_count = update_condensation_items(user_id, old_ids, new_items)
+            total_delete_count += delete_count
+            total_insert_count += insert_count
+            logger.info(
+                f"condensation task_id={task_id}: {delete_count} old items deleted, {insert_count} new items inserted"
+            )
+
+        update_task(
+            task_id,
+            status="COMPLETED",
+            content={
+                "message": "completed",
+                "delete_count": total_delete_count,
+                "insert_count": total_insert_count,
+            },
+            completed_at=datetime.utcnow(),
+            elapsed_time=int((time.time() - start_ts) * 1000),
+        )
+    except Exception as exc:
+        logger.exception("condensation task error, task_id=%s user_id=%s", task_id, user_id)
+        update_task(
+            task_id,
+            status="FAILED",
+            content={"message": str(exc)},
+            completed_at=datetime.utcnow(),
+            elapsed_time=int((time.time() - start_ts) * 1000),
+            increment_failure_count=True,
+        )
+
 
 @app.middleware("http")
 async def attach_trace_id(request: Request, call_next):
@@ -222,42 +292,40 @@ async def clustering(user_id: str):
 @app.post("/api/v1/memory/condensation")
 async def condensation(user_id: str):
     logger.info(f"condensation, user_id: {user_id}")
-    embedding_client = memory_service.embedding_client
-    memory_items = get_all_memory_items(user_id, include_embedding=True)
-    # TODO 暂时拍一个值
-    if len(memory_items) < 500:
-        return JSONResponse(content={"status": "SKIP"})
-    clusters = cluster_memories(memory_items)
-    total_delete_count, total_insert_count = 0, 0
-    for label, c in clusters.items():
-        logger.info(f"Cluster {label}: {len(c)} items")
-        if label == -1:
-            continue
-        raw_items, result = await condensation_memory_items(flash_llm_client, c)
-        logger.info(f"Raw items: {raw_items}\nCondensation result: {result}\n")
-        new_items = parse_condensation_result(original_items=c, result=result)
-        summaries = [i.summary for i in new_items]
-        embeddings = await embedding_client.embed(summaries)
+    task = create_task(
+        task_type="CONDENSATION",
+        status="PROCESSING",
+        name="memory condensation",
+        key=user_id,
+        content={"user_id": user_id},
+        started_at=datetime.utcnow(),
+    )
+    asyncio.create_task(_run_condensation_task(task.id, user_id))
+    return JSONResponse(content={"status": "ACCEPTED", "task_id": task.id})
 
-        # 将embeddings赋值给new_items
-        for i, embedding in enumerate(embeddings):
-            new_items[i].embedding = embedding
 
-        # 获取需要删除的原数据ID
-        old_ids = [item.id for item in c]
-
-        # 在同一个事务中执行删除和插入操作
-        try:
-            delete_count, insert_count = update_condensation_items(user_id, old_ids, new_items)
-            total_delete_count += delete_count
-            total_insert_count += insert_count
-            logger.info(f"condensation: {delete_count} old items deleted, {insert_count} new items inserted")
-        except Exception as e:
-            msg = f"Condensation error: {e}"
-            logger.error(msg)
-            return JSONResponse(content={"status": "ERROR", "message": msg})
-    logger.info(f"condensation: total {total_delete_count} old items deleted, {total_insert_count} new items inserted")
-    return JSONResponse(content={"status": "SUCCESS", "message": "completed", "delete_count": total_delete_count, "insert_count": total_insert_count})
+@app.get("/api/v1/memory/task")
+async def get_task(task_id: int):
+    task = get_task_by_id(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return JSONResponse(content={
+        "status": "SUCCESS",
+        "task": {
+            "id": task.id,
+            "type": task.type,
+            "name": task.name,
+            "key": task.key,
+            "status": task.status,
+            "content": task.content,
+            "started_at": task.started_at.isoformat() if task.started_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "elapsed_time": task.elapsed_time,
+            "failure_count": task.failure_count,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        }
+    })
 
 
 @app.post("/api/v1/memory/retrieve-category-summary")
