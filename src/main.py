@@ -296,7 +296,7 @@ async def condensation(user_id: str):
         task_type="MEMORY_CONDENSATION",
         status="PROCESSING",
         name=f"memory-condensation-{user_id}",
-        key=user_id,
+        key=f"{user_id}:{datetime.utcnow().date().isoformat()}",
         content={"user_id": user_id},
         started_at=datetime.utcnow(),
     )
