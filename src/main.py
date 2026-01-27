@@ -256,6 +256,7 @@ async def condensation(user_id: str):
             msg = f"Condensation error: {e}"
             logger.error(msg)
             return JSONResponse(content={"status": "ERROR", "message": msg})
+    logger.info(f"condensation: total {total_delete_count} old items deleted, {total_insert_count} new items inserted")
     return JSONResponse(content={"status": "SUCCESS", "message": "completed", "delete_count": total_delete_count, "insert_count": total_insert_count})
 
 
