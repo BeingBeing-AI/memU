@@ -293,9 +293,9 @@ async def clustering(user_id: str):
 async def condensation(user_id: str):
     logger.info(f"condensation, user_id: {user_id}")
     task = create_task(
-        task_type="CONDENSATION",
+        task_type="MEMORY_CONDENSATION",
         status="PROCESSING",
-        name="memory condensation",
+        name=f"memory-condensation-{user_id}",
         key=user_id,
         content={"user_id": user_id},
         started_at=datetime.utcnow(),
