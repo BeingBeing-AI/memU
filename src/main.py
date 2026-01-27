@@ -224,10 +224,11 @@ async def condensation(user_id: str):
     logger.info(f"condensation, user_id: {user_id}")
     embedding_client = memory_service.embedding_client
     memory_items = get_all_memory_items(user_id, include_embedding=True)
-    # TODO
+    # TODO 暂时拍一个值
     if len(memory_items) < 500:
         return JSONResponse(content={"status": "SKIP"})
     clusters = cluster_memories(memory_items)
+    total_delete_count, total_insert_count = 0, 0
     for label, c in clusters.items():
         logger.info(f"Cluster {label}: {len(c)} items")
         if label == -1:
@@ -248,12 +249,14 @@ async def condensation(user_id: str):
         # 在同一个事务中执行删除和插入操作
         try:
             delete_count, insert_count = update_condensation_items(user_id, old_ids, new_items)
+            total_delete_count += delete_count
+            total_insert_count += insert_count
             logger.info(f"condensation: {delete_count} old items deleted, {insert_count} new items inserted")
-            return JSONResponse(content={"status": "SUCCESS", "message": "completed", "delete_count": delete_count, "insert_count": insert_count})
         except Exception as e:
             msg = f"Condensation error: {e}"
             logger.error(msg)
             return JSONResponse(content={"status": "ERROR", "message": msg})
+    return JSONResponse(content={"status": "SUCCESS", "message": "completed", "delete_count": total_delete_count, "insert_count": total_insert_count})
 
 
 @app.post("/api/v1/memory/retrieve-category-summary")
