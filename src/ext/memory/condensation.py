@@ -34,8 +34,6 @@ CONDENSATION_PROMPT = """
 """
 
 
-# - 不仅总结用户的内容，Starfy的内容也需要处理
-
 async def condensation_memory_items(llm_client: OpenAISDKClient, items: List[MemoryItem]) -> tuple[str, str]:
     raw_items = ""
     for item in items:
@@ -77,7 +75,7 @@ def parse_condensation_result(original_items: List[MemoryItem], result: str) -> 
         if not strip:
             continue
         new_item = MemoryItem(
-            id = str(uuid.uuid4()),
+            id=str(uuid.uuid4()),
             created_at=max_created_at,
             # TODO 合并后的memory_type等
             resource_id=original_items[0].resource_id,

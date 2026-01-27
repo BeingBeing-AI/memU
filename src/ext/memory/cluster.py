@@ -59,6 +59,7 @@ def cluster_memories(
         memories: List[MemoryItem | MemoryActivityItem],
         min_cluster_size: int = 2,
         min_samples: int | None = None,
+        max_items_in_cluster: int = 100,
 ) -> Dict[int, List[MemoryItem | MemoryActivityItem]]:
     """
     使用 HDBSCAN 对 memory embeddings 进行聚类
@@ -78,11 +79,63 @@ def cluster_memories(
         min_samples=min_samples or min_cluster_size,
         metric="euclidean",
     )
-
     labels = clusterer.fit_predict(embeddings)
 
-    clusters: Dict[int, List] = defaultdict(list)
-    for memory, label in zip(memories, labels):
-        clusters[label].append(memory)
+    clusters: Dict[int, List[int]] = defaultdict(list)
+    for index, label in enumerate(labels):
+        clusters[label].append(index)
 
-    return clusters
+    next_label = max([label for label in clusters if label != -1], default=-1) + 1
+    refined_clusters: Dict[int, List[int]] = defaultdict(list)
+    pending: List[tuple[int, List[int], int]] = [
+        (label, indices, min_cluster_size) for label, indices in clusters.items()
+    ]
+
+    while pending:
+        label, indices, current_min_cluster_size = pending.pop(0)
+        if label == -1 or len(indices) <= max_items_in_cluster:
+            refined_clusters[label].extend(indices)
+            continue
+
+        if current_min_cluster_size >= len(indices):
+            refined_clusters[-1].extend(indices)
+            continue
+
+        sub_embeddings = embeddings[indices]
+        sub_clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=current_min_cluster_size,
+            min_samples=min_samples or current_min_cluster_size,
+            metric="euclidean",
+        )
+        sub_labels = sub_clusterer.fit_predict(sub_embeddings)
+        if not {sub_label for sub_label in sub_labels if sub_label != -1}:
+            pending.append((label, indices, current_min_cluster_size + 1))
+            continue
+
+        sub_label_map: Dict[int, int] = {}
+        new_clusters: Dict[int, List[int]] = defaultdict(list)
+        for index, sub_label in zip(indices, sub_labels):
+            if sub_label == -1:
+                new_clusters[-1].append(index)
+                continue
+            if sub_label not in sub_label_map:
+                sub_label_map[sub_label] = next_label
+                next_label += 1
+            new_clusters[sub_label_map[sub_label]].append(index)
+
+        needs_retry = any(
+            cluster_label != -1 and len(cluster_indices) > max_items_in_cluster
+            for cluster_label, cluster_indices in new_clusters.items()
+        )
+        if needs_retry:
+            pending.append((label, indices, current_min_cluster_size + 1))
+            continue
+
+        for cluster_label, cluster_indices in new_clusters.items():
+            refined_clusters[cluster_label].extend(cluster_indices)
+
+    final_clusters: Dict[int, List[MemoryItem | MemoryActivityItem]] = defaultdict(list)
+    for label, indices in refined_clusters.items():
+        final_clusters[label] = [memories[index] for index in indices]
+
+    return final_clusters

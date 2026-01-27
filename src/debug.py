@@ -109,6 +109,18 @@ async def test_memory_activity_item_cluster(user_id: int):
     # print("---")
     return clusters
 
+async def test_cluster_memory_items(user_id):
+    memory_items = get_all_memory_items(user_id, include_embedding=True)
+    clusters = cluster_memories(memory_items)
+    results = []
+    for label, c in clusters.items():
+        print(f"Cluster {label}: {len(c)} items")
+        for item in c:
+            print(f"  - {item.get_content()}")
+        print("---")
+        if label == -1:
+            continue
+
 
 async def test_condensation_memory_items(user_id):
     memory_items = get_all_memory_items(user_id, include_embedding=True)
@@ -144,7 +156,8 @@ async def test_custom_retrieve():
 
 
 async def main():
-    await test_condensation_memory_items("cobe")
+    await test_cluster_memory_items("5101")
+    # await test_condensation_memory_items("5101")
     # await memory_service.llm_client.summarize(text="hello")
 
 
