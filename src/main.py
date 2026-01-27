@@ -233,6 +233,7 @@ async def condensation(user_id: str):
         if label == -1:
             continue
         raw_items, result = await condensation_memory_items(flash_llm_client, c)
+        logger.info(f"Raw items: {raw_items}\nCondensation result: {result}\n")
         new_items = parse_condensation_result(original_items=c, result=result)
         summaries = [i.summary for i in new_items]
         embeddings = await embedding_client.embed(summaries)
