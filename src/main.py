@@ -479,28 +479,52 @@ async def retrieve_related_items(request: MultiRetrieveRequest):
             item_dict["query_weight"] = weight
             weighted_items_by_source[query_source].append(item_dict)
 
-    # 按加权相似度排序并取top_k
+    # 按加权相似度排序并取top_k，同时根据 id 去重
     sources = []
     top_k = request.top_k
-    for query_source, items in weighted_items_by_source.items():
-        items.sort(key=lambda x: x["weighted_similarity"], reverse=True)
+    seen_ids: set[str] = set()
+    unique_total_found = 0
+    for query_source in request.query_sources:
+        items = weighted_items_by_source.get(query_source, [])
+        # 同一来源内按 id 去重，保留加权相似度最高的条目
+        deduped_by_id: dict[str, dict[str, Any]] = {}
+        for item in items:
+            item_id = str(item.get("id", ""))
+            if not item_id:
+                continue
+            existing = deduped_by_id.get(item_id)
+            if not existing or item["weighted_similarity"] > existing["weighted_similarity"]:
+                deduped_by_id[item_id] = item
+        deduped_items = list(deduped_by_id.values())
+        deduped_items.sort(key=lambda x: x["weighted_similarity"], reverse=True)
+        filtered_items = []
+        for item in deduped_items:
+            item_id = str(item["id"])
+            if item_id in seen_ids:
+                continue
+            seen_ids.add(item_id)
+            filtered_items.append(item)
+            if len(filtered_items) >= top_k:
+                break
+        unique_total_found += len(filtered_items)
         sources.append({
             "query_source": query_source,
-            "items": items[:top_k] if top_k < len(items) else items,
+            "items": filtered_items,
         })
     resp = {
-        "total_found": total_found,
+        "total_found": unique_total_found,
         "sources": sources,
     }
 
     # 计算耗时
     elapsed_time = time.time() - start_time
     logger.info(
-        "retrieve_items_by_queries timings: total=%.4fs, embed=%.4fs, db=%.4fs, total_found=%d",
+        "retrieve_items_by_queries timings: total=%.4fs, embed=%.4fs, db=%.4fs, total_found=%d, total_unique=%d",
         elapsed_time,
         embed_elapsed,
         db_elapsed,
         total_found,
+        unique_total_found,
     )
 
     return JSONResponse(content=resp)
