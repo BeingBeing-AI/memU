@@ -85,7 +85,7 @@ class BubbleStyle:
 
 STYLE = BubbleStyle(
     x=22,
-    start_y=110,
+    start_y=22,
     max_width=295,
     avatar_gap=8,
     padding_x=12,
