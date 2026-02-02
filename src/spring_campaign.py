@@ -36,10 +36,15 @@ BACKGROUND_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/backgro
 BACKGROUND_PATH = RES_DIR / "background.svg"
 BOTTOM_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/bottom.svg"
 BOTTOM_PATH = RES_DIR / "bottom.svg"
-DOT_LONG_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/dot_long.svg"
-DOT_LONG_PATH = RES_DIR / "dot_long.svg"
+
+DOT_1_LAYER_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/dot_short.svg"
+DOT_1_LAYER_PATH = RES_DIR / "dot_1_layer.svg"
+DOT_2_LAYER_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/dot_short.svg"
+DOT_2_LAYER_PATH = RES_DIR / "dot_2_layer.svg"
 DOT_SHORT_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/dot_short.svg"
 DOT_SHORT_PATH = RES_DIR / "dot_short.svg"
+DOT_LONG_URL = "https://solulu-cdn.starfyally.com/campaign/2026-spring/dot_long.svg"
+DOT_LONG_PATH = RES_DIR / "dot_long.svg"
 router = APIRouter()
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -63,7 +68,7 @@ class BubbleStyle:
     radius: int
     line_spacing: int
     gap: int
-    dot_height_threshold: int
+    dot_line_ranges: tuple[tuple[int, int | None, Path], ...]
     outer_height_offset: int
     dot_y_offset: int
     bubble_fill: str
@@ -81,9 +86,14 @@ STYLE = BubbleStyle(
     padding_x=12,
     padding_y=10,
     radius=12,
-    line_spacing=6,
+    line_spacing=0,
     gap=18,
-    dot_height_threshold=290,
+    dot_line_ranges=(
+        (0, 2, DOT_1_LAYER_PATH),
+        (2, 6, DOT_2_LAYER_PATH),
+        (6, 10, DOT_SHORT_PATH),
+        (10, None, DOT_LONG_PATH),
+    ),
     outer_height_offset=130,
     dot_y_offset=10,
     bubble_fill="#FFFFFF",
@@ -148,7 +158,6 @@ def _create_text_elements(
                 "font-family": "PingFang SC, Noto Sans SC, sans-serif",
                 "font-size": str(font_size),
                 "fill": text_fill,
-                "dominant-baseline": "text-before-edge",
             },
         )
         text_el.text = line
@@ -163,21 +172,22 @@ def _bubble_layout(
         font: ImageFont.FreeTypeFont,
         style: BubbleStyle,
         max_width: int | None = None,
-) -> tuple[List[str], int, int, int]:
+) -> tuple[List[str], int, int, int, int]:
     """Calculate lines, line height, bubble width and height for a given text."""
     max_width = max_width or style.max_width
     text_max_width = max_width - style.padding_x * 2
     lines = _wrap_text(draw, text, font, text_max_width)
 
-    # Measure vertical metrics once; line height comes from a single glyph.
-    line_height = _measure_text(draw, "啊", font)[1]
+    # Use font metrics so SVG baseline positioning matches the bubble height.
+    ascent, descent = font.getmetrics()
+    line_height = ascent + descent
     text_block_height = (line_height * len(lines)) + (style.line_spacing * (len(lines) - 1 if len(lines) > 1 else 0))
 
     bubble_height = text_block_height + style.padding_y * 2
     text_widths = [_measure_text(draw, line, font)[0] for line in lines]
     bubble_width = min(max_width, max(text_widths) + style.padding_x * 2 if text_widths else max_width)
 
-    return lines, line_height, bubble_width, bubble_height
+    return lines, line_height, ascent, bubble_width, bubble_height
 
 
 def _parse_svg_length(value: str | None) -> float | None:
@@ -263,6 +273,7 @@ def _render_bubble(
         *,
         lines: List[str],
         line_height: int,
+        baseline_offset: int,
         bubble_width: int,
         bubble_height: int,
         y: int,
@@ -286,7 +297,7 @@ def _render_bubble(
     parent.append(rect)
 
     text_x = x + style.padding_x
-    text_y = y + style.padding_y
+    text_y = y + style.padding_y + baseline_offset
     _create_text_elements(
         parent,
         lines,
@@ -322,6 +333,14 @@ def _ensure_height(root: ET.Element, required_height: int) -> None:
             parts[3] = str(required_height)
             root.set("viewBox", " ".join(parts))
 
+def _select_dot_path(line_count: int, ranges: tuple[tuple[int, int | None, Path], ...]) -> Path:
+    for min_lines, max_lines, dot_path in ranges:
+        if line_count < min_lines:
+            continue
+        if max_lines is None or line_count < max_lines:
+            return dot_path
+    return DOT_LONG_PATH
+
 
 def render_svg(relatives_message: str, my_message: str) -> str:
     """Render chat bubbles into the base Spring template and return SVG text."""
@@ -332,6 +351,7 @@ def render_svg(relatives_message: str, my_message: str) -> str:
     root = template.getroot()
     outer_rect = _find_rect(root, "b_outer")
     inner_rect = _find_rect(root, "b_inner")
+    outer_x, _, _, _ = _parse_rect_geometry(outer_rect)
     inner_x, inner_y, inner_width, inner_height = _parse_rect_geometry(inner_rect)
 
     canvas_width, _ = _parse_svg_size(root)
@@ -360,7 +380,7 @@ def render_svg(relatives_message: str, my_message: str) -> str:
     current_y = int(inner_y + top_margin)
 
     # Render the first bubble.
-    relatives_lines, relatives_line_height, relatives_bubble_width, relatives_bubble_height = _bubble_layout(
+    relatives_lines, relatives_line_height, relatives_baseline_offset, relatives_bubble_width, relatives_bubble_height = _bubble_layout(
         draw,
         avatar="",
         text=relatives_message,
@@ -380,6 +400,7 @@ def render_svg(relatives_message: str, my_message: str) -> str:
         chat_group,
         lines=relatives_lines,
         line_height=relatives_line_height,
+        baseline_offset=relatives_baseline_offset,
         bubble_width=relatives_bubble_width,
         bubble_height=relatives_bubble_height,
         y=current_y,
@@ -387,10 +408,10 @@ def render_svg(relatives_message: str, my_message: str) -> str:
         fill=STYLE.bubble_fill,
         x_override=bubble_start_x,
     )
-    current_y += max(relatives_bubble_height, relatives_avatar_height) + STYLE.gap
+    current_y += relatives_bubble_height + STYLE.gap
 
     # Render the second bubble.
-    my_lines, my_line_height, my_bubble_width, my_bubble_height = _bubble_layout(
+    my_lines, my_line_height, my_baseline_offset, my_bubble_width, my_bubble_height = _bubble_layout(
         draw,
         avatar="",
         text=my_message,
@@ -410,6 +431,7 @@ def render_svg(relatives_message: str, my_message: str) -> str:
         chat_group,
         lines=my_lines,
         line_height=my_line_height,
+        baseline_offset=my_baseline_offset,
         bubble_width=my_bubble_width,
         bubble_height=my_bubble_height,
         y=current_y,
@@ -429,7 +451,8 @@ def render_svg(relatives_message: str, my_message: str) -> str:
     required_outer_height = int(required_inner_height + STYLE.outer_height_offset)
     outer_rect.set("height", str(required_outer_height))
 
-    dot_path = DOT_LONG_PATH if required_inner_height > STYLE.dot_height_threshold else DOT_SHORT_PATH
+    total_lines = max(1, len(relatives_lines) + len(my_lines))
+    dot_path = _select_dot_path(total_lines, STYLE.dot_line_ranges)
     dot_tree = ET.parse(dot_path)
     dot_root = dot_tree.getroot()
     dot_width, _ = _parse_svg_size(dot_root)
@@ -450,9 +473,7 @@ def render_svg(relatives_message: str, my_message: str) -> str:
     if bottom_height is None:
         raise ValueError("Bottom SVG is missing height or viewBox height.")
 
-    translate_x = 0
-    if bottom_width is not None and canvas_width is not None:
-        translate_x = int((canvas_width - bottom_width) / 2)
+    translate_x = int(outer_x)
 
     translate_y = int(required_outer_height - bottom_height)
     bottom_group = ET.Element(
@@ -478,28 +499,20 @@ async def download_res(res_path: Path, res_url: str):
 
 
 async def ensure_resources():
-    for res in zip(
-        [
-            FONT_PATH,
-            BACKGROUND_PATH,
-            DOT_LONG_PATH,
-            DOT_SHORT_PATH,
-            BOTTOM_PATH,
-            AVATAR_ME_PATH,
-            AVATAR_RELATIVE_PATH,
-        ],
-        [
-            FONT_URL,
-            BACKGROUND_URL,
-            DOT_LONG_URL,
-            DOT_SHORT_URL,
-            BOTTOM_URL,
-            AVATAR_ME_URL,
-            AVATAR_RELATIVE_URL,
-        ],
-    ):
-        if not os.path.exists(res[0]):
-            await download_res(res[0], res[1])
+    resources = [
+        (FONT_PATH, FONT_URL),
+        (BACKGROUND_PATH, BACKGROUND_URL),
+        (DOT_1_LAYER_PATH, DOT_1_LAYER_URL),
+        (DOT_2_LAYER_PATH, DOT_2_LAYER_URL),
+        (DOT_SHORT_PATH, DOT_SHORT_URL),
+        (DOT_LONG_PATH, DOT_LONG_URL),
+        (BOTTOM_PATH, BOTTOM_URL),
+        (AVATAR_ME_PATH, AVATAR_ME_URL),
+        (AVATAR_RELATIVE_PATH, AVATAR_RELATIVE_URL),
+    ]
+    for res_path, res_url in resources:
+        if not os.path.exists(res_path):
+            await download_res(res_path, res_url)
 
 
 @router.post("/api/campaign/2026-spring/generate-card", response_model=CardResponse)
@@ -517,11 +530,16 @@ async def reload_resource():
 
 async def test():
     await ensure_resources()
-    # result = render_svg("今年过节不收礼", "收礼只收脑白金")
+    result = render_svg("今年过节不收礼", "收礼只收脑白金")
+    # result = render_svg("今年过节不收礼", "收礼只收脑白金，你是不是指望我回你这句呢")
     # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢")
+    # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈")
     # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
+    # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
+    # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
     # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
-    result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
+    # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
+    # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
     # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈")
     with open("output.svg", "w", encoding="utf-8") as f:
         f.write(result)
