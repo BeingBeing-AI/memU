@@ -176,6 +176,7 @@ def _bubble_layout(
     """Calculate lines, line height, bubble width and height for a given text."""
     max_width = max_width or style.max_width
     text_max_width = max_width - style.padding_x * 2
+    text = text.replace("\n", "")
     lines = _wrap_text(draw, text, font, text_max_width)
 
     # Use font metrics so SVG baseline positioning matches the bubble height.
@@ -530,7 +531,8 @@ async def reload_resource():
 
 async def test():
     await ensure_resources()
-    result = render_svg("今年过节不收礼", "收礼只收脑白金")
+    result = render_svg("30好几了怎么还不抓紧找对象啊？", "抓紧？我要去哪里抓？派出所吗？🙂\n\n你要是实在闲得慌，不如去抓抓彩票，中五百万的概率都比我随便抓个对象靠谱。")
+    # result = render_svg("今年过节不收礼", "收礼只收脑白金")
     # result = render_svg("今年过节不收礼", "收礼只收脑白金，你是不是指望我回你这句呢")
     # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢")
     # result = render_svg("今年过节不收礼哈哈哈哈哈哈哈哈哈哈哈哈哈哈哈", "收礼只收脑白金，你是不是指望我回你这句呢，哈哈哈哈哈哈哈哈哈哈哈哈")
