@@ -131,7 +131,7 @@ class ExtMemoryService(MemoryService):
             }
             for cat in valid_categories
         ]
-        response = await self.llm_client.summarize(system_prompt=PROMPT, text=json.dumps(formated, indent=2),
+        response = await self.llm_client.summarize(system_prompt=PROMPT, text=json.dumps(formated, indent=2, ensure_ascii=False),
                                                    reasoning_effort="medium")
         logger.info(f"Summary user profile: {response}")
         cat = ctx.store.get_or_create_category(name="user_profile", description="summary of user profile",
