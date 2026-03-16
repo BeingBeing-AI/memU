@@ -27,8 +27,13 @@ class ExtOpenAIEmbeddingSDKClient(OpenAIEmbeddingSDKClient):
                 azure_endpoint=azure_endpoint,
                 api_version=api_version,
             )
+            self.embedding_endpoint = (
+                f"{azure_endpoint.rstrip('/')}/openai/deployments/"
+                f"{self.embed_model}/embeddings?api-version={api_version}"
+            )
         else:
             super().__init__(base_url=base_url, api_key=api_key, embed_model=embed_model)
+            self.embedding_endpoint = f"{self.base_url.rstrip('/')}/embeddings"
 
     async def embed(self, inputs: list[str], batch_size: int = 10) -> list[list[float]]:
         """
@@ -59,7 +64,18 @@ class ExtOpenAIEmbeddingSDKClient(OpenAIEmbeddingSDKClient):
                     trimmed = trimmed[:MAX_EMBED_QUERY_CHARS]
                 sanitized_batch.append(trimmed)
 
-            response = await self.client.embeddings.create(model=self.embed_model, input=sanitized_batch, dimensions=VECTOR_DIMENSION)
+            logger.info(
+                "Sending embedding request endpoint=%s model=%s batch_size=%d dimensions=%d",
+                self.embedding_endpoint,
+                self.embed_model,
+                len(sanitized_batch),
+                VECTOR_DIMENSION,
+            )
+            response = await self.client.embeddings.create(
+                model=self.embed_model,
+                input=sanitized_batch,
+                dimensions=VECTOR_DIMENSION,
+            )
             emb = [cast(list[float], d.embedding) for d in response.data]
             all_embeddings.extend(emb)
         return all_embeddings
