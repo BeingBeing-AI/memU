@@ -2,8 +2,9 @@ import base64
 import logging
 from pathlib import Path
 from typing import Any, Literal, Optional
+from urllib.parse import parse_qs, urlparse
 
-from openai import AsyncOpenAI, Omit, omit
+from openai import AsyncAzureOpenAI, AsyncOpenAI, Omit, omit
 from openai.types import ReasoningEffort
 from openai.types.chat import (
     ChatCompletionContentPartImageParam,
@@ -23,7 +24,18 @@ class OpenAISDKClient:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key or ""
         self.chat_model = chat_model
-        self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+
+        parsed_url = urlparse(self.base_url)
+        api_version = parse_qs(parsed_url.query).get("api-version", [None])[0]
+        if api_version:
+            azure_endpoint = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            self.client = AsyncAzureOpenAI(
+                api_key=self.api_key,
+                azure_endpoint=azure_endpoint,
+                api_version=api_version,
+            )
+        else:
+            self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
 
     async def summarize(
         self,
