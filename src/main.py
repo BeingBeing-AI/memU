@@ -34,9 +34,9 @@ from fastapi.exceptions import RequestValidationError
 from spring_campaign import router as spring_campaign_router
 
 flash_llm_client = OpenAISDKClient(
-    base_url="https://gemini-965808384446.asia-east1.run.app/v1beta/openai",
-    api_key=os.getenv("NEBULA_API_KEY"),
-    chat_model="gemini-3-flash-preview",
+    base_url=os.getenv("OPENAI_BASE_URL"),
+    api_key=os.getenv("OPENAI_API_KEY"),
+    chat_model="gpt-5.4-mini",
 )
 
 
