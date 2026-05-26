@@ -33,13 +33,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from spring_campaign import router as spring_campaign_router
 
-flash_llm_client = OpenAISDKClient(
-    base_url=os.getenv("OPENAI_BASE_URL"),
-    api_key=os.getenv("OPENAI_API_KEY"),
-    chat_model="gpt-5.4-mini",
-)
-
-
 trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="-")
 
 
@@ -152,7 +145,7 @@ async def _run_condensation_task(task_id: int, user_id: str) -> None:
             logger.info(f"condensation task_id={task_id} cluster={label} size={len(c)}")
             if label == -1:
                 continue
-            raw_items, result = await condensation_memory_items(flash_llm_client, c)
+            raw_items, result = await condensation_memory_items(memory_service.llm_client, c)
             logger.info(f"task_id={task_id} raw items: \n{raw_items}\nCondensation result: \n{result}\n")
             new_items = parse_condensation_result(original_items=c, result=result)
             summaries = [i.summary for i in new_items]
