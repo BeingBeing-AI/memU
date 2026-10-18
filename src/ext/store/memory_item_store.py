@@ -1,10 +1,29 @@
 import uuid
 from typing import List
 
+from sqlalchemy import func
+
 from ext.ext_models import ExtMemoryItem
 from ext.store.pg_repo import MemoryItemModel
 from ext.store.pg_session import shared_engine
 from memu.models import MemoryItem
+
+
+def count_memory_items(user_id: str) -> int:
+    """Count the user's active memory items without loading rows or embeddings."""
+    session = shared_engine.session()
+    try:
+        return (
+            session.query(func.count())
+            .select_from(MemoryItemModel)
+            .filter(
+                MemoryItemModel.user_id == user_id,
+                MemoryItemModel.is_deleted.is_(False),
+            )
+            .scalar()
+        )
+    finally:
+        session.close()
 
 
 def get_all_memory_items(user_id: str, include_embedding: bool = False) -> List[MemoryItem]:
