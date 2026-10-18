@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Column, DateTime, Index, Integer, String, Text, func
+from sqlalchemy import BigInteger, Column, DateTime, Index, Integer, String, Text, func, text
 
 from ext.store.pg_session import Base, shared_engine
 
@@ -52,6 +52,54 @@ def create_task(
         session.commit()
         session.refresh(task)
         return task
+    finally:
+        session.close()
+
+
+def get_or_create_processing_task(
+    *,
+    task_type: str,
+    key: str,
+    name: str,
+    content: dict[str, Any],
+    allow_create: bool = True,
+) -> tuple[TaskModel | None, bool]:
+    """Atomically reuse a processing task across workers, or create one if allowed."""
+    session = shared_engine.session()
+    try:
+        # Serialize each daily key across processes without a schema migration.
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:task_type), hashtext(:key))"),
+            {"task_type": task_type, "key": key},
+        )
+        task = (
+            session.query(TaskModel)
+            .filter(
+                TaskModel.type == task_type,
+                TaskModel.key == key,
+                TaskModel.status == "PROCESSING",
+            )
+            .order_by(TaskModel.id.desc())
+            .first()
+        )
+        if task is not None or not allow_create:
+            return task, False
+
+        task = TaskModel(
+            type=task_type,
+            key=key,
+            name=name,
+            status="PROCESSING",
+            content=json.dumps(content, ensure_ascii=True),
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+    except Exception:
+        session.rollback()
+        raise
+    else:
+        return task, True
     finally:
         session.close()
 

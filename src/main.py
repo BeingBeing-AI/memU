@@ -22,8 +22,8 @@ from ext.memory.cluster import cluster_memories
 from ext.memory.condensation import condensation_memory_items, parse_condensation_result
 from ext.store.activity_item_store import retrieve_activity_items_to_memory
 from ext.store.memory_item_store import retrieve_memory_items, get_all_memory_items, update_condensation_items, \
-    add_memory_items
-from ext.store.task_store import create_task, get_task_by_id, update_task
+    add_memory_items, count_memory_items
+from ext.store.task_store import get_or_create_processing_task, get_task_by_id, update_task
 from memu.app import DefaultUserModel
 from memu.llm.openai_sdk import OpenAISDKClient
 
@@ -119,27 +119,50 @@ app = FastAPI(strict_validation=False)
 app.include_router(spring_campaign_router)
 memory_service = init_memory_service()
 
+CONDENSATION_MAX_CONCURRENCY = int(os.getenv("CONDENSATION_MAX_CONCURRENCY", "1"))
+CONDENSATION_MAX_QUEUE_SIZE = int(os.getenv("CONDENSATION_MAX_QUEUE_SIZE", "20"))
+if CONDENSATION_MAX_CONCURRENCY < 1 or CONDENSATION_MAX_QUEUE_SIZE < 0:
+    message = "Condensation concurrency must be positive and queue size must be non-negative"
+    raise ValueError(message)
+
+_condensation_semaphore = asyncio.Semaphore(CONDENSATION_MAX_CONCURRENCY)
+_condensation_admission_lock = asyncio.Lock()
+_condensation_tasks: set[asyncio.Task[None]] = set()
+
+
+def _condensation_task_done(task: asyncio.Task[None]) -> None:
+    _condensation_tasks.discard(task)
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.error("Condensation background task failed", exc_info=error)
+
+
 async def _run_condensation_task(task_id: int, user_id: str) -> None:
+    async with _condensation_semaphore:
+        await _condense_memory(task_id, user_id)
+
+
+async def _condense_memory(task_id: int, user_id: str) -> None:
     start_ts = time.time()
-    started_at = datetime.utcnow()
-    update_task(task_id, started_at=started_at)
     try:
-        embedding_client = memory_service.embedding_client
-        memory_items = get_all_memory_items(user_id, include_embedding=True)
-        if len(memory_items) < 500:
-            update_task(
+        await asyncio.to_thread(update_task, task_id, started_at=datetime.utcnow())
+        total_items = await asyncio.to_thread(count_memory_items, user_id)
+        if total_items < 500:
+            await asyncio.to_thread(
+                update_task,
                 task_id,
                 status="COMPLETED",
                 content={
                     "result": "SKIP",
                     "message": "not enough memory items",
-                    "total_items": len(memory_items),
+                    "total_items": total_items,
                 },
                 completed_at=datetime.utcnow(),
                 elapsed_time=int((time.time() - start_ts) * 1000),
             )
             return
-        clusters = cluster_memories(memory_items)
+        embedding_client = memory_service.embedding_client
+        memory_items = await asyncio.to_thread(get_all_memory_items, user_id, include_embedding=True)
+        clusters = await asyncio.to_thread(cluster_memories, memory_items)
         total_delete_count, total_insert_count = 0, 0
         for label, c in clusters.items():
             logger.info(f"condensation task_id={task_id} cluster={label} size={len(c)}")
@@ -147,7 +170,7 @@ async def _run_condensation_task(task_id: int, user_id: str) -> None:
                 continue
             raw_items, result = await condensation_memory_items(memory_service.llm_client, c)
             logger.info(f"task_id={task_id} raw items: \n{raw_items}\nCondensation result: \n{result}\n")
-            new_items = parse_condensation_result(original_items=c, result=result)
+            new_items = await asyncio.to_thread(parse_condensation_result, original_items=c, result=result)
             summaries = [i.summary for i in new_items]
             embeddings = await embedding_client.embed(summaries)
 
@@ -159,14 +182,15 @@ async def _run_condensation_task(task_id: int, user_id: str) -> None:
             old_ids = [item.id for item in c]
 
             # 在同一个事务中执行删除和插入操作
-            delete_count, insert_count = update_condensation_items(user_id, old_ids, new_items)
+            delete_count, insert_count = await asyncio.to_thread(update_condensation_items, user_id, old_ids, new_items)
             total_delete_count += delete_count
             total_insert_count += insert_count
             logger.info(
                 f"condensation task_id={task_id}: {delete_count} old items deleted, {insert_count} new items inserted"
             )
 
-        update_task(
+        await asyncio.to_thread(
+            update_task,
             task_id,
             status="COMPLETED",
             content={
@@ -179,7 +203,8 @@ async def _run_condensation_task(task_id: int, user_id: str) -> None:
         )
     except Exception as exc:
         logger.exception("condensation task error, task_id=%s user_id=%s", task_id, user_id)
-        update_task(
+        await asyncio.to_thread(
+            update_task,
             task_id,
             status="FAILED",
             content={"message": str(exc)},
@@ -285,21 +310,36 @@ async def clustering(user_id: str):
 @app.post("/api/v1/memory/condensation")
 async def condensation(user_id: str):
     logger.info(f"condensation, user_id: {user_id}")
-    task = create_task(
-        task_type="MEMORY_CONDENSATION",
-        status="PROCESSING",
-        name=f"memory-condensation-{user_id}",
-        key=f"{user_id}:{datetime.utcnow().date().isoformat()}",
-        content={"user_id": user_id},
-        started_at=datetime.utcnow(),
-    )
-    asyncio.create_task(_run_condensation_task(task.id, user_id))
+    # Include running jobs in the bound so admission also works before jobs start.
+    async with _condensation_admission_lock:
+        has_capacity = len(_condensation_tasks) < CONDENSATION_MAX_CONCURRENCY + CONDENSATION_MAX_QUEUE_SIZE
+        creation = asyncio.create_task(
+            asyncio.to_thread(
+                get_or_create_processing_task,
+                task_type="MEMORY_CONDENSATION",
+                name=f"memory-condensation-{user_id}",
+                key=f"{user_id}:{datetime.utcnow().date().isoformat()}",
+                content={"user_id": user_id},
+                allow_create=has_capacity,
+            )
+        )
+        try:
+            await asyncio.shield(creation)
+        finally:
+            # If the request disconnects during the DB commit, still run its task.
+            task, created = await creation
+            if created:
+                background_task = asyncio.create_task(_run_condensation_task(task.id, user_id))
+                _condensation_tasks.add(background_task)
+                background_task.add_done_callback(_condensation_task_done)
+    if task is None:
+        return JSONResponse(status_code=429, content={"status": "BUSY"})
     return JSONResponse(content={"status": "ACCEPTED", "task_id": task.id})
 
 
 @app.get("/api/v1/memory/task")
 async def get_task(task_id: int):
-    task = get_task_by_id(task_id)
+    task = await asyncio.to_thread(get_task_by_id, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return JSONResponse(content={
